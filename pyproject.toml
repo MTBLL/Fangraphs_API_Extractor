@@ -1,0 +1,25 @@
+[project]
+name = "fangraphs-api-extractor"
+version = "0.1.0"
+description = "Fangraphs API ETL Extractor"
+authors = [
+    {name = "Taylor \"TP\" Pubins",email = "tpubz@icloud.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "requests (>=2.32.3,<3.0.0)",
+    "pydantic (>=2.11.4,<3.0.0)"
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-cov = "^6.1.1"
+pdbpp = "^0.11.6"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
