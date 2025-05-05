@@ -44,7 +44,8 @@ def test_hitter_basic_parsing(hitter_steamer_data):
 
     # Test some basic projection data
     proj = player.projections["steamer"]
-    assert proj.hr == 25.3512
+    assert proj.hr == 25  # Integer conversion from 25.3512
+    assert proj.h == 151  # Integer conversion from 151.182
     assert proj.pa == 657.643
     assert proj.avg == 0.264213
     assert pytest.approx(proj.war) == 4.69297

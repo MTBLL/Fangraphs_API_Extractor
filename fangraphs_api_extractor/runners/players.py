@@ -1,6 +1,7 @@
 import argparse
-from typing import List, Optional, Union
+from typing import List, Optional
 
+from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 from fangraphs_api_extractor.utils import Logger
 
@@ -9,7 +10,7 @@ def main(
     sample_size: Optional[int] = None,
     output_file: Optional[str] = None,
     pretty: bool = True,
-) -> Union[List[Player], List[PlayerModel]]:
+) -> List[PlayerModel] | None:
     """
     Main function to extract player data from Fangraphs Baseball API.
 
@@ -60,6 +61,8 @@ def main(
     year = args.year
 
     cf = CoreFangraphs(year=year, logger=logger)
+    hitters = cf.get_projections("bat")
+    return hitters
 
 
 if __name__ == "__main__":

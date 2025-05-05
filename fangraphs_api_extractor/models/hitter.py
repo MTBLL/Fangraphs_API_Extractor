@@ -1,8 +1,15 @@
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .base_player import BaseProjectionModel, PlayerModel
+
+
+def int_from_float(v: Any) -> Any:
+    """Convert float values to integers by rounding."""
+    if isinstance(v, float):
+        return int(round(v))
+    return v
 
 
 class HitterProjectionModel(BaseProjectionModel):
@@ -10,13 +17,19 @@ class HitterProjectionModel(BaseProjectionModel):
 
     # Common batting stats across projection systems
     games: Optional[float] = Field(None, alias="G")
-    pa: Optional[float] = Field(None, alias="PA")
-    ab: Optional[float] = Field(None, alias="AB")
-    h: Optional[float] = Field(None, alias="H")
+    pa: float = Field(0.0, alias="PA")
+    ab: float = Field(0.0, alias="AB")
+    h: int = Field(0, alias="H")
     singles: Optional[float] = Field(None, alias="1B")
     doubles: Optional[float] = Field(None, alias="2B")
     triples: Optional[float] = Field(None, alias="3B")
-    hr: Optional[float] = Field(None, alias="HR")
+    hr: int = Field(0, alias="HR")
+    
+    # Validator to convert float to int for h and hr
+    @field_validator("h", "hr", mode="before")
+    @classmethod
+    def convert_to_int(cls, v):
+        return int_from_float(v)
     r: Optional[float] = Field(None, alias="R")
     rbi: Optional[float] = Field(None, alias="RBI")
     bb: Optional[float] = Field(None, alias="BB")
@@ -30,7 +43,7 @@ class HitterProjectionModel(BaseProjectionModel):
     cs: Optional[float] = Field(None, alias="CS")
 
     # Rate stats
-    avg: Optional[float] = Field(None, alias="AVG")
+    avg: float = Field(0.0, alias="AVG")
     obp: Optional[float] = Field(None, alias="OBP")
     slg: Optional[float] = Field(None, alias="SLG")
     ops: Optional[float] = Field(None, alias="OPS")
@@ -77,6 +90,11 @@ class HitterProjectionModel(BaseProjectionModel):
     uzr: Optional[float] = Field(None, alias="UZR")
     base_running: Optional[float] = Field(None, alias="BaseRunning")
     gdp_runs: Optional[float] = Field(None, alias="GDPRuns")
+
+    model_config = {
+        "strict": False,  # Allow type coercion
+        "coerce_numbers_to_int": True,  # This allows float to int coercion
+    }
 
 
 class HitterSteamerProjectionModel(HitterProjectionModel):

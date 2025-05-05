@@ -1,9 +1,12 @@
 import os
 from threading import Lock
+from typing import List
 
 import requests
 from requests.sessions import RequestsCookieJar
 
+from fangraphs_api_extractor.managers import parse_players
+from fangraphs_api_extractor.models.base_player import PlayerModel
 from fangraphs_api_extractor.utils import (
     BATTING_POSITIONS,
     FANGRAPHS_PROJECTIONS_ENDPOINT,
@@ -79,11 +82,11 @@ class CoreFangraphs:
 
     def get_projections(
         self,
+        position_group: str,
         params: dict | None = None,
-        position_group: str = "bat",
         position: str = "all",
         projections_system: str = "steamer",
-    ):
+    ) -> List[PlayerModel] | None:
         self.fg_projections_url = FANGRAPHS_PROJECTIONS_ENDPOINT
         try:
             if position_group not in ["bat", "pit", "sta", "rel"]:
@@ -115,4 +118,6 @@ class CoreFangraphs:
         }
         merged_params.update(params or {})
 
-        return self._get(params=merged_params)
+        players_data = self._get(params=merged_params)
+        players_models = parse_players(players_data)
+        return players_models

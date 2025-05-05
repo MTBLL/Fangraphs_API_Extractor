@@ -35,14 +35,39 @@ hitter_data = get_projection_data(player_id="25878", projection_system="steamer"
 player = PlayerModel.parse_player(hitter_data, projection_source="steamer")
 
 # Access player information
-print(f"Player: {player.player_name} ({player.team})")
+print(f"Player: {player.name} ({player.team})")
 print(f"Position: {player.min_position}")
+print(f"Player slug: {player.slug}")  # Useful for URLs 
+print(f"Stats API endpoint: {player.stats_api}")  # Ready-to-use API endpoint
 
 # Access projection data
 projection = player.projections["steamer"]
 print(f"Projected HR: {projection.hr}")
 print(f"Projected AVG/OBP/SLG: {projection.avg}/{projection.obp}/{projection.slg}")
 print(f"Projected WAR: {projection.war}")
+```
+
+### Using the Player Manager
+
+If you have data for multiple players from the Fangraphs API, you can parse them all at once:
+
+```python
+from fangraphs_api_extractor.managers.players_manager import parse_players
+from fangraphs_api_extractor.requests import get_all_projections
+
+# Get data for all hitters with Steamer projections
+response_data = get_all_projections(projection_system="steamer", position="all")
+
+# Parse all players at once
+players = parse_players(response_data)
+
+# Now you have a list of player models
+print(f"Found {len(players)} players")
+
+# You can filter or sort them as needed
+power_hitters = [p for p in players if p.projections["steamer"].hr >= 30]
+for player in power_hitters:
+    print(f"{player.name}: {player.projections['steamer'].hr} HR")
 ```
 
 ### Adding Multiple Projections
@@ -62,6 +87,7 @@ player.projections["atc"] = atc_projection.projections["atc"]
 # Compare projections
 print(f"Steamer ERA: {player.projections['steamer'].era}")
 print(f"ATC ERA: {player.projections['atc'].era}")
+print(f"{player.name}'s Projection Comparison: Steamer: {player.projections['steamer'].war} WAR, ATC: {player.projections['atc'].war} WAR")
 ```
 
 ## Data Models
@@ -69,6 +95,9 @@ print(f"ATC ERA: {player.projections['atc'].era}")
 ### Player Models
 
 - `PlayerModel`: Base model for all players with common identification fields
+  - Properties:
+    - `slug`: Generates a URL-friendly version of the player name
+    - `stats_api`: Generates a stats API endpoint for the player
 - `HitterModel`: Model for hitters
 - `PitcherModel`: Model for pitchers
 
@@ -76,11 +105,19 @@ print(f"ATC ERA: {player.projections['atc'].era}")
 
 - `BaseProjectionModel`: Common fields across all projection systems
 - `HitterProjectionModel`: Base model for hitter projections
+  - Automatically converts decimal stat values to integers where appropriate (e.g., HR, H)
+  - Handles raw projection data from Fangraphs API
 - `PitcherProjectionModel`: Base model for pitcher projections
 - System-specific models:
   - `HitterSteamerProjectionModel`, `PitcherSteamerProjectionModel`
   - `HitterATCProjectionModel`, `PitcherATCProjectionModel`
   - `HitterTHEBATProjectionModel`, `PitcherTHEBATProjectionModel`
+
+### Manager Functions
+
+- `parse_players()`: Parses multiple player data records from the Fangraphs API response
+  - Takes the raw API response with nested data structure
+  - Returns a list of typed player models with their projections
 
 ## Development
 
