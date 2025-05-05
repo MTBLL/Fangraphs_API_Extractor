@@ -1,6 +1,5 @@
-FANGRAPHS_CORE_BUILD_ENDPOINT = (
-    "https://www.fangraphs.com/_next/data/JnNS4pK_PHEa_Wk1StnE0"
-)
+BUILD_ID = "JnNS4pK_PHEa_Wk1StnE0"
+FANGRAPHS_CORE_BUILD_ENDPOINT = "https://www.fangraphs.com/_next/data/" + BUILD_ID
 FANGRAPHS_PROJECTIONS_ENDPOINT = FANGRAPHS_CORE_BUILD_ENDPOINT + "/projections.json"
 
 # Requests
