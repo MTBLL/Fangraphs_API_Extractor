@@ -33,7 +33,6 @@ def test_hitter_basic_parsing(hitter_steamer_data):
     assert isinstance(player, HitterModel)
     assert player.name == "Corbin Carroll"
     assert player.team == "ARI"
-    assert player.league == "NL"
     assert player.playerid == "25878"
     assert player.xmlbam_id == 682998
     assert "stats.json" in player.stats_api

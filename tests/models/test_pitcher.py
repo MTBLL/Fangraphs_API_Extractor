@@ -33,7 +33,6 @@ def test_pitcher_basic_parsing(pitcher_steamer_data):
     assert isinstance(player, PitcherModel)
     assert player.name == "Paul Skenes"
     assert player.team == "PIT"
-    assert player.league == "NL"
     assert player.playerid == "33677"
     assert player.xmlbam_id == 694973
     assert "stats.json" in player.stats_api

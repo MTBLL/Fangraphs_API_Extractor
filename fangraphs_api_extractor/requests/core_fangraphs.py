@@ -1,12 +1,10 @@
 import os
 from threading import Lock
-from typing import List
+from typing import Dict, Any, Optional
 
 import requests
 from requests.sessions import RequestsCookieJar
 
-from fangraphs_api_extractor.managers import parse_players
-from fangraphs_api_extractor.models.base_player import PlayerModel
 from fangraphs_api_extractor.utils import (
     BATTING_POSITIONS,
     FANGRAPHS_PROJECTIONS_ENDPOINT,
@@ -22,7 +20,11 @@ from fangraphs_api_extractor.utils.errors import (
 
 
 class CoreFangraphs:
-    def __init__(self, year: int, logger: Logger, max_workers: int | None = None):
+    """
+    Core class for interacting with the Fangraphs API.
+    Responsible only for making API requests and returning raw data.
+    """
+    def __init__(self, year: int, logger: Logger, max_workers: Optional[int] = None):
         self.year = year
         self.logger = logger
         self.logger_lock = Lock()  # Thread-safe logging
@@ -38,14 +40,17 @@ class CoreFangraphs:
         self.session = requests.Session()
         self.session.headers.update(USER_AGENT_HEADER)
         self.session.cookies = RequestsCookieJar()
+        
+        # Set the API URL
+        self.fg_projections_url = FANGRAPHS_PROJECTIONS_ENDPOINT
 
     def _check_request_status(
         self,
         status: int,
         extend: str = "",
-        params: dict | None = None,
-        headers: dict | None = None,
-    ) -> dict | None:
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Handles Fangraphs API response status codes and endpoint format switching"""
         if status == 200:
             return None
@@ -64,8 +69,22 @@ class CoreFangraphs:
                 self.logger.logging.warn(f"Unknown error: {status}")
 
     def _get(
-        self, params: dict | None = None, headers: dict | None = None, extend: str = ""
-    ):
+        self, 
+        params: Optional[Dict[str, Any]] = None, 
+        headers: Optional[Dict[str, str]] = None, 
+        extend: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Make a GET request to the Fangraphs API.
+        
+        Args:
+            params: Query parameters for the request
+            headers: Additional headers for the request
+            extend: URL path extension
+            
+        Returns:
+            The JSON response from the API
+        """
         endpoint = self.fg_projections_url + extend
         r = requests.get(
             endpoint, params=params, headers=headers, cookies=self.session.cookies
@@ -80,14 +99,25 @@ class CoreFangraphs:
 
         return r.json()
 
-    def get_projections(
+    def get_projections_data(
         self,
         position_group: str,
-        params: dict | None = None,
+        params: Optional[Dict[str, Any]] = None,
         position: str = "all",
         projections_system: str = "steamer",
-    ) -> List[PlayerModel] | None:
-        self.fg_projections_url = FANGRAPHS_PROJECTIONS_ENDPOINT
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get raw projection data from the Fangraphs API.
+        
+        Args:
+            position_group: Type of player data to get (bat, pit, sta, rel)
+            params: Additional query parameters
+            position: Position filter (all, c, 1b, etc.)
+            projections_system: Projection system to use (steamer, zips, etc.)
+            
+        Returns:
+            Raw JSON data from the API, or None if an error occurred
+        """
         try:
             if position_group not in ["bat", "pit", "sta", "rel"]:
                 raise InvalidPositionGroupError(position_group)
@@ -118,6 +148,10 @@ class CoreFangraphs:
         }
         merged_params.update(params or {})
 
-        players_data = self._get(params=merged_params)
-        players_models = parse_players(players_data)
-        return players_models
+        try:
+            self.logger.logging.info(f"Fetching {position_group} projections with {projections_system}")
+            raw_data = self._get(params=merged_params)
+            return raw_data
+        except Exception as e:
+            self.logger.logging.error(f"Error fetching projections: {e}")
+            return None

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, ForwardRef, Optional, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 T = TypeVar("T", bound="PlayerModel")
 # Use forward references to avoid circular imports
@@ -69,13 +69,28 @@ class PlayerModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
     # Basic player identification
-    team: str = Field(alias="Team")
+    team: str = Field(alias="Team")  # Will be handled by validator
     playerid: str = Field(alias="playerid")
     name: str = Field(alias="PlayerName")
     xmlbam_id: int = Field(alias="xMLBAMID")
     team_id: int = Field(alias="teamid")
-    league: str = Field(alias="League")
     adp: Optional[float] = Field(None, alias="ADP")
+    
+    @field_validator('team', mode='before')
+    @classmethod
+    def handle_null_team(cls, v):
+        """Convert None team values to 'FA' for free agents"""
+        if v is None:
+            return "FA"
+        return v
+        
+    @field_validator('team_id', 'xmlbam_id', mode='before')
+    @classmethod
+    def handle_null_ids(cls, v):
+        """Convert None ID values to -1"""
+        if v is None:
+            return -1
+        return v
 
     # Additional player information from newer format
     min_position: Optional[str] = Field(None, alias="minpos")
@@ -104,6 +119,35 @@ class PlayerModel(BaseModel):
 
     # Dictionary to store projections from different sources
     projections: Dict[str, BaseProjectionModel] = {}
+
+    def model_dump_json(self, **kwargs) -> str:
+        """
+        Serialize the model to a JSON string with indentation for readability.
+
+        Args:
+            **kwargs: Additional kwargs passed to model_dump
+
+        Returns:
+            str: JSON string representation of the model
+        """
+        import json
+
+        # Set default values for JSON serialization if not provided
+        kwargs.setdefault("indent", 2)
+        kwargs.setdefault("exclude_none", True)
+
+        # Get model as dict
+        data = self.model_dump(**kwargs)
+
+        # Convert to JSON string
+        return json.dumps(
+            data,
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k in ["indent", "ensure_ascii", "sort_keys"]
+            },
+        )
 
     @classmethod
     def parse_player(

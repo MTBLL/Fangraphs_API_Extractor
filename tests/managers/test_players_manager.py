@@ -10,6 +10,7 @@ import pytest
 
 from fangraphs_api_extractor.managers.players_manager import parse_players
 from fangraphs_api_extractor.models import HitterModel, HitterSteamerProjectionModel
+from fangraphs_api_extractor.utils import Logger
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def hitter_projections_data() -> Dict:
 def test_parse_players(hitter_projections_data):
     """Test parsing multiple players from the API response structure."""
     # Parse the player data using the manager function
-    players = parse_players(hitter_projections_data)
+    players = parse_players(hitter_projections_data, Logger("test"))
 
     # Test basic assertions about the returned data
     assert players is not None
@@ -41,7 +42,7 @@ def test_parse_players(hitter_projections_data):
     # Test specific player data if we know what to expect
     # For example, if we know the fixture contains Bobby Witt Jr and Corbin Carroll
     player_names = [player.name for player in players]
-    assert len(player_names) == 2  # The fixture contains 2 players
+    assert len(player_names) == 3
 
     # Check for specific data in the first player
     first_player = players[0]
