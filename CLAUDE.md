@@ -100,6 +100,8 @@ Always typecheck before committing:
 poetry run mypy fangraphs_api_extractor/
 ```
 
+Type checking is also automated as part of the GitHub Actions workflow and will run on all pull requests and pushes to main.
+
 ## File Naming Conventions
 
 - Model files: `base_player.py`, `hitter.py`, `pitcher.py`

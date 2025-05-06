@@ -5,9 +5,8 @@ Test that null Team values are properly handled in player models.
 import json
 import os
 
-from fangraphs_api_extractor.managers.players_manager import parse_players
+from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.models.base_player import PlayerModel
-from fangraphs_api_extractor.utils import Logger
 
 
 def test_null_team_sets_free_agent():
@@ -24,7 +23,7 @@ def test_null_team_sets_free_agent():
         test_data = json.load(f)
 
     # Parse the players
-    players = parse_players(test_data, Logger("test"))
+    players = PlayersManager("test").parse_players(test_data)
 
     # Find a player with null Team in the fixture
     # Whit Merrifield in the fixture has Team: null

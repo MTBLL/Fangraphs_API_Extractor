@@ -1,4 +1,4 @@
-name: Python Tests
+name: Python Tests and Type Checking
 
 on:
   push:
@@ -27,6 +27,10 @@ jobs:
           python -m pip install poetry
           poetry install
 
+      - name: Run Type Checking with mypy
+        run: |
+          poetry run mypy fangraphs_api_extractor/
+          
       - name: Test with pytest and coverage
         run: |
           poetry run pytest --cov=fangraphs_api_extractor --cov-report=xml tests/

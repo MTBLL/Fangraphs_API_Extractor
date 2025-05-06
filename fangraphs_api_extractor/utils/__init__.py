@@ -6,6 +6,8 @@ __all__ = [
     "USER_AGENT_HEADER",
     "write_json_file",
     "serialize_players",
+    "normalize_string",
+    "get_nested_values",
 ]
 
 from .constants import (
@@ -15,4 +17,5 @@ from .constants import (
     USER_AGENT_HEADER,
 )
 from .logger import Logger
-from .utils import serialize_players, write_json_file
+from .string_utils import normalize_string
+from .utils import get_nested_values, serialize_players, write_json_file

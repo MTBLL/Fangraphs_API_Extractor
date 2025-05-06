@@ -8,9 +8,8 @@ from typing import Dict
 
 import pytest
 
-from fangraphs_api_extractor.managers.players_manager import parse_players
+from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.models import HitterModel, HitterSteamerProjectionModel
-from fangraphs_api_extractor.utils import Logger
 
 
 @pytest.fixture
@@ -28,7 +27,7 @@ def hitter_projections_data() -> Dict:
 def test_parse_players(hitter_projections_data):
     """Test parsing multiple players from the API response structure."""
     # Parse the player data using the manager function
-    players = parse_players(hitter_projections_data, Logger("test"))
+    players = PlayersManager("test").parse_players(hitter_projections_data)
 
     # Test basic assertions about the returned data
     assert players is not None
@@ -40,9 +39,10 @@ def test_parse_players(hitter_projections_data):
         assert isinstance(player, HitterModel)
 
     # Test specific player data if we know what to expect
-    # For example, if we know the fixture contains Bobby Witt Jr and Corbin Carroll
+    # We should have multiple players, including some specific ones we can check for
     player_names = [player.name for player in players]
-    assert len(player_names) == 3
+    assert "Bobby Witt Jr." in player_names
+    assert "Julio Rodríguez" in player_names  # Check for player with non-ASCII name
 
     # Check for specific data in the first player
     first_player = players[0]

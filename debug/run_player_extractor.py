@@ -24,7 +24,7 @@ if __name__ == "__main__":
     print("Fetching both hitter and pitcher projections...")
     players = main(
         use_test_data=False,  # Use real API data
-        output_file=output_file,
+        output_dir=output_file,
         sample_size=20,  # Limit to 20 players for testing
     )
 

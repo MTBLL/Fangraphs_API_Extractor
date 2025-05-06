@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Any, Dict, ForwardRef, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from fangraphs_api_extractor.utils import normalize_string
+
 T = TypeVar("T", bound="PlayerModel")
 # Use forward references to avoid circular imports
 if TYPE_CHECKING:
@@ -75,16 +77,16 @@ class PlayerModel(BaseModel):
     xmlbam_id: int = Field(alias="xMLBAMID")
     team_id: int = Field(alias="teamid")
     adp: Optional[float] = Field(None, alias="ADP")
-    
-    @field_validator('team', mode='before')
+
+    @field_validator("team", mode="before")
     @classmethod
     def handle_null_team(cls, v):
         """Convert None team values to 'FA' for free agents"""
         if v is None:
             return "FA"
         return v
-        
-    @field_validator('team_id', 'xmlbam_id', mode='before')
+
+    @field_validator("team_id", "xmlbam_id", mode="before")
     @classmethod
     def handle_null_ids(cls, v):
         """Convert None ID values to -1"""
@@ -97,9 +99,19 @@ class PlayerModel(BaseModel):
     upurl: Optional[str] = Field(None, alias="UPURL")
 
     @property
+    def ascii_name(self) -> str:
+        """Return the name with accents removed (ASCII-only version)"""
+        return normalize_string(self.name)
+
+    @property
     def slug(self) -> str:
-        # drop any periods and replace spaces with hyphens
-        return self.name.lower().replace(".", "").replace(" ", "-")
+        """
+        Generate a URL-safe slug for the player using the ASCII version of the name.
+        This removes accents and non-ASCII characters for URL compatibility.
+        """
+        # Use ascii_name to ensure no accents or non-ASCII characters
+        # then drop any periods and replace spaces with hyphens
+        return self.ascii_name.lower().replace(".", "").replace(" ", "-")
 
     @property
     def stats_api(self) -> str:
@@ -154,6 +166,8 @@ class PlayerModel(BaseModel):
         cls, data: Dict[str, Any], projection_source: str = "steamer"
     ) -> Any:
         """Factory method to determine player type and return appropriate instance"""
+        from typing import Type
+
         from . import (
             HitterATCProjectionModel,
             HitterModel,
@@ -168,6 +182,18 @@ class PlayerModel(BaseModel):
         )
 
         # Determine player and projection types
+        player_cls: Type[PitcherModel | HitterModel]
+        proj_cls: Type[
+            PitcherSteamerProjectionModel
+            | PitcherATCProjectionModel
+            | PitcherTHEBATProjectionModel
+            | PitcherProjectionModel
+            | HitterSteamerProjectionModel
+            | HitterATCProjectionModel
+            | HitterTHEBATProjectionModel
+            | HitterProjectionModel
+        ]
+
         if "W" in data and "L" in data and "ERA" in data:
             player_cls = PitcherModel
             if projection_source.lower() == "steamer":

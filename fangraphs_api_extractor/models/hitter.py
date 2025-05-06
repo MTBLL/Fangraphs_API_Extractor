@@ -24,12 +24,13 @@ class HitterProjectionModel(BaseProjectionModel):
     doubles: Optional[float] = Field(None, alias="2B")
     triples: Optional[float] = Field(None, alias="3B")
     hr: int = Field(0, alias="HR")
-    
+
     # Validator to convert float to int for h and hr
     @field_validator("h", "hr", mode="before")
     @classmethod
     def convert_to_int(cls, v):
         return int_from_float(v)
+
     r: Optional[float] = Field(None, alias="R")
     rbi: Optional[float] = Field(None, alias="RBI")
     bb: Optional[float] = Field(None, alias="BB")
@@ -91,10 +92,8 @@ class HitterProjectionModel(BaseProjectionModel):
     base_running: Optional[float] = Field(None, alias="BaseRunning")
     gdp_runs: Optional[float] = Field(None, alias="GDPRuns")
 
-    model_config = {
-        "strict": False,  # Allow type coercion
-        "coerce_numbers_to_int": True,  # This allows float to int coercion
-    }
+    class Config:
+        strict = False
 
 
 class HitterSteamerProjectionModel(HitterProjectionModel):
