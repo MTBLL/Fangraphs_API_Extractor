@@ -1,5 +1,6 @@
 # Fangraphs API Extractor
 [![codecov](https://codecov.io/gh/MTBLL/Fangraphs_API_Extractor/graph/badge.svg?token=Vk0FSuR25F)](https://codecov.io/gh/MTBLL/Fangraphs_API_Extractor)
+
 A Python package for extracting and parsing player data from Fangraphs projections into structured Pydantic models.
 
 ## Features
