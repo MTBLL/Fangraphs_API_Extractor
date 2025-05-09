@@ -3,14 +3,20 @@ from typing import Any, Dict, List
 from fangraphs_api_extractor.models.base_player import PlayerModel
 from fangraphs_api_extractor.utils import Logger, get_nested_values
 
-FG_PAGE_PROPS_API_PATH = ["dehydratedState", "queries", 0, "state", "data"]
+FG_PAGE_PROPS_API_PATH: List[str | int] = [
+    "dehydratedState",
+    "queries",
+    0,
+    "state",
+    "data",
+]
 
 
 class PlayersManager:
     def __init__(self, player_group: str = "hitters"):
         self.logger = Logger(f"{player_group}_players_manager")
         self.log = self.logger.logging
-        self.players = []
+        self.players: List[PlayerModel] = []
 
     def _parse_nested_player_data(self, data: Dict[str, Any]):
         if self.log:
