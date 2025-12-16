@@ -31,14 +31,14 @@ The project follows a separation of concerns pattern:
 ### Testing
 ```bash
 # Run all tests
-poetry run pytest
+uv run pytest
 
 # Run with coverage
-poetry run pytest --cov=fangraphs_api_extractor
+uv run pytest --cov=fangraphs_api_extractor
 
 # Run specific test files
-poetry run pytest tests/models/test_hitter.py
-poetry run pytest tests/models/test_pitcher.py
+uv run pytest tests/models/test_hitter.py
+uv run pytest tests/models/test_pitcher.py
 ```
 
 ### Debugging
@@ -97,7 +97,7 @@ python debug/run_player_extractor.py
 
 Always typecheck before committing:
 ```bash
-poetry run mypy fangraphs_api_extractor/
+uv run mypy fangraphs_api_extractor/
 ```
 
 Type checking is also automated as part of the GitHub Actions workflow and will run on all pull requests and pushes to main.

@@ -7,19 +7,19 @@ This directory contains tests for the Fangraphs API Extractor.
 To run all tests:
 
 ```bash
-poetry run pytest
+uv run pytest
 ```
 
 To run with coverage report:
 
 ```bash
-poetry run pytest --cov=fangraphs_api_extractor
+uv run pytest --cov=fangraphs_api_extractor
 ```
 
 To run a specific test file:
 
 ```bash
-poetry run pytest tests/models/test_hitter.py
+uv run pytest tests/models/test_hitter.py
 ```
 
 ## Test Fixtures

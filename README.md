@@ -16,7 +16,7 @@ A Python package for extracting and parsing player data from Fangraphs projectio
 
 ```bash
 # Install from the current directory
-poetry install
+uv install
 
 # Or if you're installing from a repo
 pip install git+https://github.com/username/fangraphs-api-extractor.git
@@ -178,20 +178,20 @@ git clone https://github.com/MTBLL/Fangraphs_API_Extractor.git
 cd Fangraphs_API_Extractor
 
 # Install dependencies
-poetry install
+uv install
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests
-poetry run pytest
+uv run pytest
 
 # Run with coverage
-poetry run pytest --cov=fangraphs_api_extractor
+uv run pytest --cov=fangraphs_api_extractor
 
 # Run specific test file
-poetry run pytest tests/models/test_hitter.py
+uv run pytest tests/models/test_hitter.py
 ```
 
 ### Debugging
