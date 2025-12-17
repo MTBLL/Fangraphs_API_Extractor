@@ -25,7 +25,7 @@ class ProjectionSource(str, Enum):
     ATC = "atc"
     THE_BAT = "the_bat"
     ZIPS = "zips"
-    DEPTH_CHARTS = "depth_charts"
+    DEPTH_CHARTS = "fangraphsdc"
 
 
 class BaseProjectionModel(BaseModel):
@@ -106,9 +106,22 @@ class PlayerModel(BaseModel):
     @property
     def slug(self) -> str:
         """
-        Generate a URL-safe slug for the player using the ASCII version of the name.
-        This removes accents and non-ASCII characters for URL compatibility.
+        Generate a URL-safe slug for the player.
+        Extracts from UPURL if available, otherwise generates from ASCII name.
+
+        Examples:
+        - UPURL: "/players/aaron-judge/15640/stats?position=OF" → "aaron-judge"
+        - Fallback: "José Ramírez" → "jose-ramirez"
         """
+        # If UPURL is available, extract slug from it
+        if self.upurl:
+            # UPURL format: "/players/aaron-judge/15640/stats?position=OF"
+            # Extract the part between "/players/" and the player ID
+            parts = self.upurl.split("/")
+            if len(parts) >= 4 and parts[1] == "players":
+                return parts[2]
+
+        # Fallback: generate from ASCII name
         # Use ascii_name to ensure no accents or non-ASCII characters
         # then drop any periods and replace spaces with hyphens
         return self.ascii_name.lower().replace(".", "").replace(" ", "-")
@@ -131,35 +144,6 @@ class PlayerModel(BaseModel):
 
     # Dictionary to store projections from different sources
     projections: Dict[str, BaseProjectionModel] = {}
-
-    def model_dump_json(self, **kwargs) -> str:
-        """
-        Serialize the model to a JSON string with indentation for readability.
-
-        Args:
-            **kwargs: Additional kwargs passed to model_dump
-
-        Returns:
-            str: JSON string representation of the model
-        """
-        import json
-
-        # Set default values for JSON serialization if not provided
-        kwargs.setdefault("indent", 2)
-        kwargs.setdefault("exclude_none", True)
-
-        # Get model as dict
-        data = self.model_dump(**kwargs)
-
-        # Convert to JSON string
-        return json.dumps(
-            data,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if k in ["indent", "ensure_ascii", "sort_keys"]
-            },
-        )
 
     @classmethod
     def parse_player(

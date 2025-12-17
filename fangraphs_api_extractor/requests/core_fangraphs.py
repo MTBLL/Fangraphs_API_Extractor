@@ -8,7 +8,7 @@ from requests.sessions import RequestsCookieJar
 
 from fangraphs_api_extractor.utils import (
     BATTING_POSITIONS,
-    FANGRAPHS_PROJECTIONS_ENDPOINT,
+    FANGRAPHS_API_ENDPOINT,
     PROJECTION_SYSTEMS,
     Logger,
 )
@@ -37,15 +37,13 @@ class CoreFangraphs:
     Responsible only for making API requests and returning raw data.
     """
 
-    def __init__(self, year: int, logger: Logger, max_workers: Optional[int] = None):
+    def __init__(self, year: int, max_workers: Optional[int] = None):
         self.year = year
-        self.logger = logger
+        self.logger = Logger("core_fangraphs")
         self.logger_lock = Lock()  # Thread-safe logging
 
         # Configure default number of workers if not specified (use CPU count)
-        cpu_count = os.cpu_count()
-        if cpu_count is None:
-            cpu_count = 1
+        cpu_count = os.cpu_count() or 1
         self.max_workers = (
             max_workers if max_workers is not None else min(32, cpu_count * 4)
         )
@@ -55,7 +53,7 @@ class CoreFangraphs:
         self.session.cookies = RequestsCookieJar()
 
         # Set the API URL
-        self.fg_projections_url = FANGRAPHS_PROJECTIONS_ENDPOINT
+        self.fg_projections_url = FANGRAPHS_API_ENDPOINT
 
     def _check_request_status(
         self,
@@ -78,19 +76,19 @@ class CoreFangraphs:
                     return
 
                 case ResponseStatus.NOT_FOUND.value:
-                    self.logger.logging.warn(f"Endpoint not found: {extend}")
+                    self.logger.logging.warning(f"Endpoint not found: {extend}")
 
                 case ResponseStatus.RATE_LIMITED.value:
-                    self.logger.logging.warn("Rate limit exceeded")
+                    self.logger.logging.warning("Rate limit exceeded")
 
                 case ResponseStatus.SERVER_ERROR.value:
-                    self.logger.logging.warn("Internal server error")
+                    self.logger.logging.warning("Internal server error")
 
                 case ResponseStatus.SERVICE_UNAVAILABLE.value:
-                    self.logger.logging.warn("Service unavailable")
+                    self.logger.logging.warning("Service unavailable")
 
                 case _:
-                    self.logger.logging.warn(f"Unknown error: {status}")
+                    self.logger.logging.warning(f"Unknown error: {status}")
 
     def _get(
         self,

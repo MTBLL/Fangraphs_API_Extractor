@@ -2,41 +2,33 @@
 Test that null Team values are properly handled in player models.
 """
 
-import json
-import os
-
 from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.models.base_player import PlayerModel
 
 
 def test_null_team_sets_free_agent():
     """Test that a null Team value in the JSON is processed as 'FA' in the player model."""
-    # Path to the fixture with a player that has a null Team value
-    fixture_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "fixtures",
-        "hitter_projections.json",
-    )
-
-    # Load the test data
-    with open(fixture_path, "r") as f:
-        test_data = json.load(f)
+    # Create mock data with null team
+    test_data = [
+        {
+            "Team": None,  # Null team (free agent)
+            "playerid": "12345",
+            "PlayerName": "Free Agent Player",
+            "xMLBAMID": 123456,
+            "teamid": -1,
+            "AB": 400,
+            "PA": 450,
+            "RBI": 50,
+        }
+    ]
 
     # Parse the players
     players = PlayersManager("test").parse_players(test_data)
 
-    # Find a player with null Team in the fixture
-    # Whit Merrifield in the fixture has Team: null
-    null_team_player = None
-    for player in players:
-        if player.name == "Whit Merrifield":
-            null_team_player = player
-            break
+    # Assert that we got one player
+    assert len(players) == 1
 
-    # Assert that we found the player
-    assert null_team_player is not None, (
-        "Could not find Whit Merrifield in parsed players"
-    )
+    null_team_player = players[0]
 
     # Assert that the player's team is set to 'FA' instead of None
     assert null_team_player.team == "FA", (
