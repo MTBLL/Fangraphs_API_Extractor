@@ -2,38 +2,45 @@
 """
 Debug runner script for the Fangraphs API Extractor.
 This script runs the player extractor and saves the output to a JSON file.
-It uses the players.py runner to fetch both hitter and pitcher data.
+It mimics the main entry point but with additional debug output.
 """
 
-import os
 import sys
 from pathlib import Path
+
+from fangraphs_api_extractor.runners import PlayerRunner
 
 # Add the project root directory to the Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from fangraphs_api_extractor.runners.players import main
 
-if __name__ == "__main__":
-    # Set the output file to be in the project root
-    output_file = os.path.join(project_root, "extracted_players.json")
-
-    # Run the player extractor with real API data and save to the specified file
+def main():
+    """Debug entry point."""
     print("===== RUNNING PLAYER EXTRACTOR WITH REAL API DATA =====")
     print("Fetching both hitter and pitcher projections...")
-    players = main(
-        use_test_data=False,  # Use real API data
-        output_dir=output_file,
-        sample_size=20,  # Limit to 20 players for testing
-    )
 
-    print(
-        f"Extraction complete! {len(players)} players extracted and saved to {output_file}"
-    )
+    try:
+        # Initialize the extractor
+        extractor = PlayerRunner(
+            year=2025,
+            threads=None,  # Use default (4x CPU cores)
+            batch_size=100,
+        )
 
-    # Print some information about players as a sanity check
-    if players and len(players) > 0:
+        # Run the extraction with sample size for debugging
+        players = extractor.run(
+            sample_size=20,  # Limit to 20 players for testing
+            output_dir=str(project_root),  # Save to project root
+        )
+
+        if not players:
+            print("Extraction failed - no players returned")
+            sys.exit(1)
+
+        print(f"\nExtraction complete! {len(players)} players extracted")
+
+        # Print some information about players as a sanity check
         # Find a pitcher to check stats_api property
         pitchers = [
             p
@@ -43,20 +50,20 @@ if __name__ == "__main__":
 
         if pitchers:
             pitcher = pitchers[0]
-            print("\nSample pitcher information:")
+            print("\n--- Sample pitcher information ---")
             print(f"Name: {pitcher.name}")
             print(f"Team: {pitcher.team}")
             print(f"Player ID: {pitcher.playerid}")
             print(f"Stats API: {pitcher.stats_api}")
-
-            # Show available projection systems
             print(f"Available projection systems: {list(pitcher.projections.keys())}")
 
             # Show some key stats from the first projection system
             if pitcher.projections:
                 proj_name = list(pitcher.projections.keys())[0]
                 proj = pitcher.projections[proj_name]
-                print(f"Projection ({proj_name}): {proj.wins} W, {proj.era} ERA")
+                print(
+                    f"Projection ({proj_name}): {getattr(proj, 'wins', 'N/A')} W, {getattr(proj, 'era', 'N/A')} ERA"
+                )
 
         # Find a hitter to check
         hitters = [
@@ -67,45 +74,27 @@ if __name__ == "__main__":
 
         if hitters:
             hitter = hitters[0]
-            print("\nSample hitter information:")
+            print("\n--- Sample hitter information ---")
             print(f"Name: {hitter.name}")
             print(f"Team: {hitter.team}")
             print(f"Player ID: {hitter.playerid}")
             print(f"Stats API: {hitter.stats_api}")
-
-            # Show available projection systems
             print(f"Available projection systems: {list(hitter.projections.keys())}")
 
             # Show some key stats from the first projection system
             if hitter.projections:
                 proj_name = list(hitter.projections.keys())[0]
                 proj = hitter.projections[proj_name]
-                print(f"Projection ({proj_name}): {proj.hr} HR, {proj.avg} AVG")
+                print(
+                    f"Projection ({proj_name}): {getattr(proj, 'hr', 'N/A')} HR, {getattr(proj, 'avg', 'N/A')} AVG"
+                )
 
-    print(
-        f"Extraction complete! {len(players)} players extracted and saved to {output_file}"
-    )
+        sys.exit(0)
 
-    # Print some information about the first player as a sanity check
-    if players and len(players) > 0:
-        first_player = players[0]
-        print("\nSample player information:")
-        print(f"Name: {first_player.name}")
-        print(f"Team: {first_player.team}")
-        print(f"Player ID: {first_player.playerid}")
-        print(f"Stats API: {first_player.stats_api}")
+    except Exception as e:
+        print(f"\nError during extraction: {e}")
+        sys.exit(1)
 
-        # Show available projection systems
-        print(f"Available projection systems: {list(first_player.projections.keys())}")
 
-        # Show some key stats from the first projection system
-        if first_player.projections:
-            proj_name = list(first_player.projections.keys())[0]
-            proj = first_player.projections[proj_name]
-
-            # For a hitter
-            if hasattr(proj, "hr") and hasattr(proj, "avg"):
-                print(f"Projection ({proj_name}): {proj.hr} HR, {proj.avg} AVG")
-            # For a pitcher
-            elif hasattr(proj, "era") and hasattr(proj, "wins"):
-                print(f"Projection ({proj_name}): {proj.wins} W, {proj.era} ERA")
+if __name__ == "__main__":
+    main()

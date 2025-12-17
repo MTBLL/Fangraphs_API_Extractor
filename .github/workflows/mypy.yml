@@ -1,4 +1,4 @@
-name: Python Tests and Type Checking
+name: Mypy Type Check
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  type-check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -29,13 +29,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Test with pytest and coverage
-        run: |
-          uv run pytest --cov=fangraphs_api_extractor --cov-report=xml tests/
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: MTBLL/Fangraphs_API_Extractor
-          fail_ci_if_error: true
+      - name: Run mypy type checking
+        run: uv run mypy fangraphs_api_extractor

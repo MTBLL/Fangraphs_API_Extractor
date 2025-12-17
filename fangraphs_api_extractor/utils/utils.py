@@ -9,17 +9,17 @@ if TYPE_CHECKING:
     from fangraphs_api_extractor.models import PlayerModel
 
 
-def serialize_players(players: List["PlayerModel"], logger: Logger) -> List[Dict]:
+def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
     """
     Serialize a list of PlayerModel objects into a JSON-serializable dictionary.
 
     Args:
         players: List of PlayerModel objects
-        logger: Logger for logging messages
 
     Returns:
         List of dictionaries representing player data
     """
+    logger = Logger("serialize_players")
     log = logger.logging
     log.debug(f"Starting serialization of {len(players)} players")
 
@@ -64,11 +64,6 @@ def serialize_players(players: List["PlayerModel"], logger: Logger) -> List[Dict
                             # Convert projection model to dictionary using model_dump
                             proj_dict = proj_data.model_dump(exclude_none=True)
                             serialized_player["projections"][proj_name] = proj_dict
-                        else:
-                            # Fallback if model_dump is not available
-                            log.warning(
-                                f"Projection {proj_name} has no model_dump method"
-                            )
                 except Exception as proj_e:
                     log.error(f"Error processing projections: {proj_e}")
 
@@ -95,7 +90,6 @@ def write_json_file(
     data: List[Dict],
     dir_path: str,
     file_name: str,
-    logger: Logger,
     indent: Optional[int] = 2,
 ) -> None:
     """
@@ -103,10 +97,11 @@ def write_json_file(
 
     Args:
         data: Data to write (JSON-serializable)
-        output_path: Path to output file
+        dir_path: Directory path to output file
+        file_name: Name of the output file
         indent: Indentation level for JSON formatting
-        logger: Logger for logging messages
     """
+    logger = Logger("write_json_file")
     log = logger.logging
     full_path = os.path.join(dir_path, file_name)
     log.debug(f"Writing data to {full_path}")

@@ -1,6 +1,10 @@
-BUILD_ID = "JnNS4pK_PHEa_Wk1StnE0"
+FANGRAPHS_API_ENDPOINT = "https://www.fangraphs.com/api/projections?"
+
+# deprecated
+BUILD_ID = "hkm1KP0YmmKjp8AmZS3FM"
 FANGRAPHS_CORE_BUILD_ENDPOINT = "https://www.fangraphs.com/_next/data/" + BUILD_ID
 FANGRAPHS_PROJECTIONS_ENDPOINT = FANGRAPHS_CORE_BUILD_ENDPOINT + "/projections.json"
+
 
 # Requests
 USER_AGENT_HEADER = {
