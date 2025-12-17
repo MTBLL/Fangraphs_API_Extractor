@@ -2,8 +2,6 @@
 
 [![codecov](https://codecov.io/gh/MTBLL/Fangraphs_API_Extractor/graph/badge.svg?token=Vk0FSuR25F)](https://codecov.io/gh/MTBLL/Fangraphs_API_Extractor)
 [![Mypy Type Check](https://github.com/MTBLL/Fangraphs_API_Extractor/actions/workflows/mypy.yml/badge.svg)](https://github.com/MTBLL/Fangraphs_API_Extractor/actions/workflows/mypy.yml)
-![Test Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen)
-![Tests](https://img.shields.io/badge/tests-97%20passing-brightgreen)
 
 A Python package for extracting and parsing baseball player data from Fangraphs projections into strongly-typed Pydantic models.
 
