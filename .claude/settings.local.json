@@ -1,3 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)"
+    ]
+  },
   "enableAllProjectMcpServers": false
 }

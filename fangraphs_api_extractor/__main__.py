@@ -32,6 +32,7 @@ def parse_args():
     )
     parser.add_argument(
         "--output_dir",
+        "-o",
         type=str,
         default=".",
         help="Path to write JSON output (default: current directory)",
@@ -42,6 +43,20 @@ def parse_args():
         default=None,
         help="Optional maximum number of players to process for sampling",
     )
+    parser.add_argument(
+        "--sources",
+        "-s",
+        type=str,
+        default="steamer",
+        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc')",
+    )
+    parser.add_argument(
+        "--weights",
+        "-w",
+        type=str,
+        default=None,
+        help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
+    )
 
     return parser.parse_args()
 
@@ -51,11 +66,34 @@ def main():
     args = parse_args()
 
     try:
+        # Parse sources
+        sources = [s.strip() for s in args.sources.split(",")]
+
+        # Parse weights
+        if args.weights:
+            weights = [int(w.strip()) for w in args.weights.split(",")]
+            if len(weights) != len(sources):
+                print(
+                    f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources)})"
+                )
+                sys.exit(1)
+        else:
+            # Equal weights if not provided
+            weights = [1] * len(sources)
+
+        # Normalize weights to sum to 1.0
+        total_weight = sum(weights)
+        normalized_weights = {
+            source: weight / total_weight for source, weight in zip(sources, weights)
+        }
+
         # Initialize the extractor
         extractor = PlayerRunner(
             year=args.year,
             threads=args.threads,
             batch_size=args.batch_size,
+            sources=sources,
+            weights=normalized_weights,
         )
 
         # Run the extraction

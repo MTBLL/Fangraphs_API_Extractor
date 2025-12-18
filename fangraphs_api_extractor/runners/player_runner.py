@@ -6,12 +6,13 @@ from the Fangraphs Baseball API. It coordinates the workflow of fetching,
 parsing, and serializing player data.
 """
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fangraphs_api_extractor.handlers import PlayerFetchHandler
 from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 from fangraphs_api_extractor.utils import Logger, serialize_players, write_json_file
+from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
 
 
 class PlayerRunner:
@@ -29,6 +30,8 @@ class PlayerRunner:
         year: int,
         threads: Optional[int] = None,
         batch_size: int = 100,
+        sources: Optional[List[str]] = None,
+        weights: Optional[Dict[str, float]] = None,
     ):
         """
         Initialize the PlayerExtractor.
@@ -37,12 +40,16 @@ class PlayerRunner:
             year: League year to fetch data for
             threads: Number of threads to use for player hydration (default: 4x CPU cores)
             batch_size: Number of players to process in each batch for progress tracking
+            sources: List of projection sources to fetch from (default: ["steamer"])
+            weights: Dictionary mapping source names to normalized weights (default: equal weights)
         """
         self.year = year
         self.logger = Logger("player_extractor")
         self.log = self.logger.logging
         self.threads = threads
         self.batch_size = batch_size
+        self.sources = sources or ["steamer"]
+        self.weights = weights or {s: 1.0 / len(self.sources) for s in self.sources}
         self.core_fangraphs = CoreFangraphs(year=year)
         self.fetch_handler = PlayerFetchHandler(self.core_fangraphs)
 
@@ -83,18 +90,30 @@ class PlayerRunner:
         Returns:
             List of PlayerModel objects if successful, None otherwise
         """
-        handler = PlayerFetchHandler(self.core_fangraphs)
-        # Fetch hitters and pitchers
-        hitters = handler.fetch_hitters()
-        pitchers = handler.fetch_pitchers()
+        # Log sources and weights
+        sources_str = ", ".join(self.sources)
+        if len(self.sources) > 1:
+            self.log.info(
+                f"Fetching from multiple sources: {sources_str} "
+                f"with weights: {self.weights}"
+            )
+        else:
+            self.log.info(f"Fetching from single source: {sources_str}")
 
-        # Combine all players
-        players = hitters + pitchers
+        # Fetch from all sources (works for both single and multiple sources)
+        players_by_source = self.fetch_handler.fetch_all_players_multi_source(
+            self.sources
+        )
+
+        # Merge projections and calculate weighted averages if multiple sources
+        players = merge_player_projections(players_by_source, self.weights)
         self.log.info(f"Total players: {len(players)}")
 
         # Apply sample size limit if provided
         if sample_size and sample_size < len(players):
-            players = self._apply_sample_limit(hitters, pitchers, sample_size)
+            self.log.info(f"Limiting to sample of {sample_size} players")
+            players = players[:sample_size]
+            self.log.info(f"Limited to {len(players)} players")
 
         # Serialize player data
         player_data = serialize_players(players)
