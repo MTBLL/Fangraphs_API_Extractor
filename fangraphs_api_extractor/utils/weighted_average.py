@@ -5,7 +5,7 @@ This module provides functions to calculate weighted averages across multiple
 projection sources for baseball player statistics.
 """
 
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Union
 
 from fangraphs_api_extractor.models.base_player import BaseProjectionModel
 from fangraphs_api_extractor.models.hitter import HitterProjectionModel
@@ -44,7 +44,7 @@ def calculate_weighted_average_projections(
     first_proj = next(iter(projections.values()))
 
     # Initialize result dictionary
-    averaged = {}
+    averaged: Dict[str, Any] = {}
 
     # Get all fields from the model class (not instance)
     for field_name, field_info in first_proj.__class__.model_fields.items():
@@ -86,7 +86,7 @@ def calculate_weighted_average_projections(
                 if is_integer_field:
                     averaged[field_name] = int(round(weighted_sum))
                 else:
-                    averaged[field_name] = weighted_sum
+                    averaged[field_name] = float(weighted_sum)
 
     return averaged
 
@@ -150,6 +150,9 @@ def merge_player_projections(
             if averaged_proj:
                 # Determine projection type using match statement
                 first_proj = next(iter(player.projections.values()))
+                avg_model: Union[
+                    HitterProjectionModel, PitcherProjectionModel, BaseProjectionModel
+                ]
                 match first_proj:
                     case HitterProjectionModel():
                         avg_model = HitterProjectionModel(**averaged_proj)
