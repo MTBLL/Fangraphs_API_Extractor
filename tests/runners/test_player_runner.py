@@ -1,10 +1,13 @@
 """Tests for PlayerRunner."""
 
+import json
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.models import HitterModel, PitcherModel
 from fangraphs_api_extractor.runners import PlayerRunner
 
@@ -112,8 +115,10 @@ def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     """Test successful run execution."""
     # Setup mock handler
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = sample_hitters
-    mock_handler.fetch_pitchers.return_value = sample_pitchers
+    # Mock the multi-source fetch method
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": sample_hitters + sample_pitchers
+    }
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -123,9 +128,8 @@ def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     assert players is not None
     assert len(players) == 8  # 5 hitters + 3 pitchers
 
-    # Verify handler methods were called
-    mock_handler.fetch_hitters.assert_called_once()
-    mock_handler.fetch_pitchers.assert_called_once()
+    # Verify handler method was called with correct sources
+    mock_handler.fetch_all_players_multi_source.assert_called_once_with(["steamer"])
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
@@ -133,16 +137,19 @@ def test_run_with_sample_size(mock_handler_class, sample_hitters, sample_pitcher
     """Test run with sample size limit."""
     # Setup mock handler
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = sample_hitters
-    mock_handler.fetch_pitchers.return_value = sample_pitchers
+    # Mock the multi-source fetch method
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": sample_hitters + sample_pitchers
+    }
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
     players = runner.run(sample_size=3)
 
-    # With sample_size=3: min(3, 5) hitters + min(3, 3) pitchers = 3 + 3 = 6
+    # With the new logic, sample_size just limits the final combined list
+    # So we get the first 3 players from the combined list (5 hitters + 3 pitchers)
     assert players is not None
-    assert len(players) == 6
+    assert len(players) == 3
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
@@ -153,8 +160,10 @@ def test_run_with_output_dir(
     """Test run with output directory specified."""
     # Setup mock handler
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = sample_hitters
-    mock_handler.fetch_pitchers.return_value = sample_pitchers
+    # Mock the multi-source fetch method
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": sample_hitters + sample_pitchers
+    }
     mock_handler_class.return_value = mock_handler
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -177,8 +186,10 @@ def test_run_without_output_dir(mock_handler_class, sample_hitters, sample_pitch
     """Test run without output directory (no file written)."""
     # Setup mock handler
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = sample_hitters
-    mock_handler.fetch_pitchers.return_value = sample_pitchers
+    # Mock the multi-source fetch method
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": sample_hitters + sample_pitchers
+    }
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -192,10 +203,10 @@ def test_run_without_output_dir(mock_handler_class, sample_hitters, sample_pitch
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
 def test_run_with_empty_results(mock_handler_class):
     """Test run when no players are fetched."""
-    # Setup mock handler to return empty lists
+    # Setup mock handler to return empty result
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = []
-    mock_handler.fetch_pitchers.return_value = []
+    # Mock the multi-source fetch method returning empty source
+    mock_handler.fetch_all_players_multi_source.return_value = {"steamer": []}
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -212,8 +223,10 @@ def test_run_creates_handler_with_correct_year(
     """Test that run creates handler with correct CoreFangraphs instance."""
     # Setup mock handler
     mock_handler = MagicMock()
-    mock_handler.fetch_hitters.return_value = sample_hitters
-    mock_handler.fetch_pitchers.return_value = sample_pitchers
+    # Mock the multi-source fetch method
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": sample_hitters + sample_pitchers
+    }
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2024)
@@ -234,3 +247,58 @@ def test_apply_sample_limit_zero_sample(sample_hitters, sample_pitchers):
 
     # With sample_size=0, should return empty list
     assert len(result) == 0
+
+
+@patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
+def test_run_with_multiple_sources(mock_handler_class):
+    """Test run with multiple projection sources using real fixtures."""
+    # Load real fixture data
+    fixtures_dir = Path(__file__).parent.parent / "fixtures"
+
+    with open(fixtures_dir / "hitter_steamer.json") as f:
+        steamer_hitter_data = json.load(f)
+
+    with open(fixtures_dir / "hitter_fangraphsdc.json") as f:
+        fangraphsdc_hitter_data = json.load(f)
+
+    # Parse players from each source
+    steamer_manager = PlayersManager("hitters")
+    steamer_players = steamer_manager.parse_players(
+        steamer_hitter_data, projection_source="steamer"
+    )
+
+    fangraphsdc_manager = PlayersManager("hitters")
+    fangraphsdc_players = fangraphsdc_manager.parse_players(
+        fangraphsdc_hitter_data[0:1], projection_source="fangraphsdc"
+    )
+
+    # Setup mock handler
+    mock_handler = MagicMock()
+    # Mock the multi-source fetch method returning data from two sources
+    mock_handler.fetch_all_players_multi_source.return_value = {
+        "steamer": steamer_players,
+        "fangraphsdc": fangraphsdc_players,
+    }
+    mock_handler_class.return_value = mock_handler
+
+    # Create runner with multiple sources and weights
+    sources = ["steamer", "fangraphsdc"]
+    weights = {"steamer": 0.75, "fangraphsdc": 0.25}
+    runner = PlayerRunner(year=2025, sources=sources, weights=weights)
+    players = runner.run()
+
+    # Verify results
+    assert players is not None
+    # Should have 2 unique players (Corbin Carroll from steamer + Aaron Judge from fangraphsdc)
+    assert len(players) == 2
+
+    # Verify handler method was called with correct sources
+    mock_handler.fetch_all_players_multi_source.assert_called_once_with(
+        ["steamer", "fangraphsdc"]
+    )
+
+    # Verify each player has their projection(s)
+    # Since players don't overlap, each should only have one source (no weighted_average)
+    for player in players:
+        assert len(player.projections) == 1
+        assert ("steamer" in player.projections) or ("fangraphsdc" in player.projections)

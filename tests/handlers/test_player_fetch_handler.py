@@ -74,8 +74,10 @@ def test_fetch_hitters_success(mock_core_fangraphs, hitter_fixture_data):
     handler = PlayerFetchHandler(mock_core_fangraphs)
     players = handler.fetch_hitters()
 
-    # Verify API was called correctly
-    mock_core_fangraphs.get_projections_data.assert_called_once_with("bat")
+    # Verify API was called correctly (now includes projection_source parameter)
+    mock_core_fangraphs.get_projections_data.assert_called_once_with(
+        "bat", projections_system="steamer"
+    )
 
     # Verify results
     assert len(players) == 2
@@ -93,7 +95,9 @@ def test_fetch_hitters_empty_response(mock_core_fangraphs):
 
     # Should return empty list
     assert players == []
-    mock_core_fangraphs.get_projections_data.assert_called_once_with("bat")
+    mock_core_fangraphs.get_projections_data.assert_called_once_with(
+        "bat", projections_system="steamer"
+    )
 
 
 def test_fetch_hitters_exception(mock_core_fangraphs):
@@ -115,8 +119,10 @@ def test_fetch_pitchers_success(mock_core_fangraphs, pitcher_fixture_data):
     handler = PlayerFetchHandler(mock_core_fangraphs)
     players = handler.fetch_pitchers()
 
-    # Verify API was called correctly
-    mock_core_fangraphs.get_projections_data.assert_called_once_with("pit")
+    # Verify API was called correctly (now includes projection_source parameter)
+    mock_core_fangraphs.get_projections_data.assert_called_once_with(
+        "pit", projections_system="steamer"
+    )
 
     # Verify results
     assert len(players) == 1
@@ -133,7 +139,9 @@ def test_fetch_pitchers_empty_response(mock_core_fangraphs):
 
     # Should return empty list
     assert players == []
-    mock_core_fangraphs.get_projections_data.assert_called_once_with("pit")
+    mock_core_fangraphs.get_projections_data.assert_called_once_with(
+        "pit", projections_system="steamer"
+    )
 
 
 def test_fetch_pitchers_exception(mock_core_fangraphs):
@@ -154,3 +162,86 @@ def test_handler_initialization(mock_core_fangraphs):
     assert handler.core_fangraphs == mock_core_fangraphs
     assert handler.logger is not None
     assert handler.log is not None
+
+
+def test_fetch_all_players_multi_source_success(
+    mock_core_fangraphs, hitter_fixture_data, pitcher_fixture_data
+):
+    """Test fetching players from multiple sources."""
+    # Setup mock to return different data for different calls
+    def get_projections_side_effect(position_group, projections_system):
+        if position_group == "bat":
+            return hitter_fixture_data
+        elif position_group == "pit":
+            return pitcher_fixture_data
+        return None
+
+    mock_core_fangraphs.get_projections_data.side_effect = (
+        get_projections_side_effect
+    )
+
+    handler = PlayerFetchHandler(mock_core_fangraphs)
+    sources = ["steamer", "fangraphsdc"]
+    players_by_source = handler.fetch_all_players_multi_source(sources)
+
+    # Verify we got data for both sources
+    assert len(players_by_source) == 2
+    assert "steamer" in players_by_source
+    assert "fangraphsdc" in players_by_source
+
+    # Verify steamer data (2 hitters + 1 pitcher = 3 total)
+    assert len(players_by_source["steamer"]) == 3
+    steamer_hitters = [p for p in players_by_source["steamer"] if isinstance(p, HitterModel)]
+    steamer_pitchers = [p for p in players_by_source["steamer"] if isinstance(p, PitcherModel)]
+    assert len(steamer_hitters) == 2
+    assert len(steamer_pitchers) == 1
+
+    # Verify fangraphsdc data (2 hitters + 1 pitcher = 3 total)
+    assert len(players_by_source["fangraphsdc"]) == 3
+    dc_hitters = [p for p in players_by_source["fangraphsdc"] if isinstance(p, HitterModel)]
+    dc_pitchers = [p for p in players_by_source["fangraphsdc"] if isinstance(p, PitcherModel)]
+    assert len(dc_hitters) == 2
+    assert len(dc_pitchers) == 1
+
+    # Verify API was called 4 times (2 sources × 2 position groups)
+    assert mock_core_fangraphs.get_projections_data.call_count == 4
+
+
+def test_fetch_all_players_multi_source_single_source(
+    mock_core_fangraphs, hitter_fixture_data, pitcher_fixture_data
+):
+    """Test fetching players with a single source in the list."""
+    def get_projections_side_effect(position_group, projections_system):
+        if position_group == "bat":
+            return hitter_fixture_data
+        elif position_group == "pit":
+            return pitcher_fixture_data
+        return None
+
+    mock_core_fangraphs.get_projections_data.side_effect = (
+        get_projections_side_effect
+    )
+
+    handler = PlayerFetchHandler(mock_core_fangraphs)
+    sources = ["steamer"]
+    players_by_source = handler.fetch_all_players_multi_source(sources)
+
+    # Verify we got data for one source
+    assert len(players_by_source) == 1
+    assert "steamer" in players_by_source
+    assert len(players_by_source["steamer"]) == 3
+
+    # Verify API was called 2 times (1 source × 2 position groups)
+    assert mock_core_fangraphs.get_projections_data.call_count == 2
+
+
+def test_fetch_all_players_multi_source_empty_sources(mock_core_fangraphs):
+    """Test fetching players with empty sources list."""
+    handler = PlayerFetchHandler(mock_core_fangraphs)
+    sources = []
+    players_by_source = handler.fetch_all_players_multi_source(sources)
+
+    # Should return empty dictionary
+    assert players_by_source == {}
+    # API should not be called
+    mock_core_fangraphs.get_projections_data.assert_not_called()

@@ -18,7 +18,7 @@ class PlayersManager:
         self.log = self.logger.logging
         self.players: List[PlayerModel] = []
 
-    def _parse_player_data_list(self, data: List):
+    def _parse_player_data_list(self, data: List, projection_source: str = "steamer"):
         if self.log:
             self.log.debug(f"Handling list of player data, length: {len(data)}")
 
@@ -27,7 +27,7 @@ class PlayersManager:
                 self.log.debug(f"Processing list item {i + 1}")
 
             try:
-                player = PlayerModel.parse_player(player_data)
+                player = PlayerModel.parse_player(player_data, projection_source=projection_source)
                 if self.log and i < 5:
                     self.log.debug(
                         f"Successfully parsed player from list: {player.name}"
@@ -39,12 +39,12 @@ class PlayersManager:
                         f"Error parsing player from list item {i + 1}: {e}"
                     )
 
-    def _parse_single_player_data(self, data: Dict[str, Any]):
+    def _parse_single_player_data(self, data: Dict[str, Any], projection_source: str = "steamer"):
         if self.log:
             self.log.debug("Handling single player data")
 
         try:
-            player = PlayerModel.parse_player(data)
+            player = PlayerModel.parse_player(data, projection_source=projection_source)
             if self.log:
                 self.log.debug(f"Successfully parsed single player: {player.name}")
             self.players.append(player)
@@ -52,12 +52,15 @@ class PlayersManager:
             if self.log:
                 self.log.warning(f"Error parsing single player: {e}")
 
-    def parse_players(self, data: Dict[str, Any] | List) -> List[PlayerModel]:
+    def parse_players(
+        self, data: Dict[str, Any] | List, projection_source: str = "steamer"
+    ) -> List[PlayerModel]:
         """
         Parse player data from various formats into a list of PlayerModel objects.
 
         Args:
             data: API response data - can be in various formats
+            projection_source: Name of projection source (e.g., 'steamer', 'fangraphsdc')
 
         Returns:
             List of PlayerModel objects
@@ -70,11 +73,11 @@ class PlayersManager:
         try:
             # Handle direct list of player data
             if isinstance(data, list):
-                self._parse_player_data_list(data)
+                self._parse_player_data_list(data, projection_source=projection_source)
 
             # Handle single player data
             elif isinstance(data, dict) and "PlayerName" in data:
-                self._parse_single_player_data(data)
+                self._parse_single_player_data(data, projection_source=projection_source)
 
             else:
                 if self.log:
