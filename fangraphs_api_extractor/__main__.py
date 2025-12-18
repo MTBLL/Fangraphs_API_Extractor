@@ -48,7 +48,7 @@ def parse_args():
         "-s",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc'). Overrides --early-preseason.",
+        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc'). Overrides --winter_meetings.",
     )
     parser.add_argument(
         "--weights",
@@ -58,9 +58,9 @@ def parse_args():
         help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
     )
     parser.add_argument(
-        "--early-preseason",
+        "--winter_meetings",
         action="store_true",
-        help="Use early preseason projection mix (steamer 75%%, fangraphsdc 25%%). Default is nominal mix (atc 50%%, steamer 25%%, zips 25%%).",
+        help="Use winter meetings projection mix (steamer 75%%, fangraphsdc 25%%). Default is nominal mix (atc 50%%, steamer 25%%, zips 25%%).",
     )
 
     return parser.parse_args()
@@ -73,7 +73,7 @@ def main():
     try:
         # Determine sources and weights based on flags
         if args.sources:
-            # Custom sources provided - use these regardless of --early-preseason flag
+            # Custom sources provided - use these regardless of --winter_meetings flag
             sources = [s.strip() for s in args.sources.split(",")]
 
             # Parse weights
@@ -87,8 +87,8 @@ def main():
             else:
                 # Equal weights if not provided
                 weights = [1] * len(sources)
-        elif args.early_preseason:
-            # Early preseason mode: steamer (75%) + fangraphsdc (25%)
+        elif args.winter_meetings:
+            # Winter meetings mode: steamer (75%) + fangraphsdc (25%)
             sources = ["steamer", "fangraphsdc"]
             weights = [75, 25]
         else:
