@@ -1,6 +1,6 @@
 [project]
 name = "fangraphs-api-extractor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fangraphs API ETL Extractor"
 authors = [
     {name = "Taylor \"TP\" Pubins",email = "tpubz@icloud.com"}
