@@ -47,8 +47,8 @@ def parse_args():
         "--sources",
         "-s",
         type=str,
-        default="steamer",
-        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc')",
+        default=None,
+        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc'). Overrides --early-preseason.",
     )
     parser.add_argument(
         "--weights",
@@ -56,6 +56,11 @@ def parse_args():
         type=str,
         default=None,
         help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
+    )
+    parser.add_argument(
+        "--early-preseason",
+        action="store_true",
+        help="Use early preseason projection mix (steamer 75%%, fangraphsdc 25%%). Default is nominal mix (atc 50%%, steamer 25%%, zips 25%%).",
     )
 
     return parser.parse_args()
@@ -66,20 +71,30 @@ def main():
     args = parse_args()
 
     try:
-        # Parse sources
-        sources = [s.strip() for s in args.sources.split(",")]
+        # Determine sources and weights based on flags
+        if args.sources:
+            # Custom sources provided - use these regardless of --early-preseason flag
+            sources = [s.strip() for s in args.sources.split(",")]
 
-        # Parse weights
-        if args.weights:
-            weights = [int(w.strip()) for w in args.weights.split(",")]
-            if len(weights) != len(sources):
-                print(
-                    f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources)})"
-                )
-                sys.exit(1)
+            # Parse weights
+            if args.weights:
+                weights = [int(w.strip()) for w in args.weights.split(",")]
+                if len(weights) != len(sources):
+                    print(
+                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources)})"
+                    )
+                    sys.exit(1)
+            else:
+                # Equal weights if not provided
+                weights = [1] * len(sources)
+        elif args.early_preseason:
+            # Early preseason mode: steamer (75%) + fangraphsdc (25%)
+            sources = ["steamer", "fangraphsdc"]
+            weights = [75, 25]
         else:
-            # Equal weights if not provided
-            weights = [1] * len(sources)
+            # Default nominal mode: atc (50%) + steamer (25%) + zips (25%)
+            sources = ["atc", "steamer", "zips"]
+            weights = [50, 25, 25]
 
         # Normalize weights to sum to 1.0
         total_weight = sum(weights)
