@@ -34,7 +34,7 @@ The project follows a separation of concerns pattern:
 uv run pytest
 
 # Run with coverage
-uv run pytest --cov=fangraphs_api_extractor
+uv run pytest --cov=fangraphs_api_extractor --cov-report=term-missing -vv
 
 # Run specific test files
 uv run pytest tests/models/test_hitter.py
