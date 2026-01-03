@@ -11,6 +11,7 @@ A Python package for extracting and parsing baseball player data from Fangraphs 
 - 📊 Parse JSON responses into strongly-typed Pydantic models
 - ⚾ Support for both hitters and pitchers with position-specific stats
 - 🔄 Handle multiple projection sources for the same player
+- 🎯 Store a single weighted projection per player (`player.projection`)
 - 🏷️ Automatic URL slug generation from player names (handles accents/special characters)
 - 🌐 Built-in stats API endpoint generation
 - ✅ 93% test coverage with 97 comprehensive tests
@@ -41,13 +42,12 @@ players = runner.run(output_dir="./data")
 for player in players[:5]:
     print(f"{player.name} ({player.team}) - {player.slug}")
     
-    # Access projections
-    if "steamer" in player.projections:
-        proj = player.projections["steamer"]
-        if hasattr(proj, "hr"):  # Hitter
-            print(f"  Projected: {proj.hr} HR, {proj.avg:.3f} AVG")
-        elif hasattr(proj, "era"):  # Pitcher
-            print(f"  Projected: {proj.wins} W, {proj.era:.2f} ERA")
+    # Access projection
+    proj = player.projection
+    if proj and hasattr(proj, "hr"):  # Hitter
+        print(f"  Projected: {proj.hr} HR, {proj.avg:.3f} AVG")
+    elif proj and hasattr(proj, "era"):  # Pitcher
+        print(f"  Projected: {proj.wins} W, {proj.era:.2f} ERA")
 ```
 
 ## Usage
@@ -61,7 +61,7 @@ from fangraphs_api_extractor.runners import PlayerRunner
 runner = PlayerRunner(year=2025)
 players = runner.run(
     sample_size=50,  # Limit to 50 players for quick testing
-    output_dir="./output"  # Saves to fangraph_players.json
+    output_dir="./output"  # Saves to fangraph_pitchers_<year>_<timestamp>.json and fangraph_batters_<year>_<timestamp>.json
 )
 
 print(f"Extracted {len(players)} players")
@@ -87,9 +87,9 @@ print(f"Team: {player.team}")
 print(f"URL Slug: {player.slug}")  # e.g., "aaron-judge"
 print(f"Stats API: {player.stats_api}")  # Ready-to-use endpoint
 
-# Access projections
-if "steamer" in player.projections:
-    proj = player.projections["steamer"]
+# Access projection
+proj = player.projection
+if proj:
     print(f"HR: {proj.hr}, AVG: {proj.avg}, WAR: {proj.war}")
 ```
 
@@ -98,26 +98,28 @@ if "steamer" in player.projections:
 ```python
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 from fangraphs_api_extractor.managers import PlayersManager
+from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
 
 fangraphs = CoreFangraphs(year=2025)
 
 # Get Steamer projections
 steamer_data = fangraphs.get_projections_data("bat", projections_system="steamer")
 manager = PlayersManager("hitters")
-players = manager.parse_players(steamer_data)
+steamer_players = manager.parse_players(steamer_data, projection_source="steamer")
 
 # Get ATC projections for same players
 atc_data = fangraphs.get_projections_data("bat", projections_system="atc")
-atc_players = manager.parse_players(atc_data)
+atc_players = manager.parse_players(atc_data, projection_source="atc")
 
-# Compare projections
-player = players[0]
-atc_player = atc_players[0]
-player.projections["atc"] = atc_player.projections["atc"]
+# Combine sources with weighted averaging
+players_by_source = {"steamer": steamer_players, "atc": atc_players}
+weights = {"steamer": 0.75, "atc": 0.25}
+merged_players = merge_player_projections(players_by_source, weights)
 
+player = merged_players[0]
+proj = player.projection
 print(f"{player.name}:")
-print(f"  Steamer: {player.projections['steamer'].war} WAR")
-print(f"  ATC: {player.projections['atc'].war} WAR")
+print(f"  Weighted WAR: {proj.war}")
 ```
 
 ## Project Structure
@@ -208,7 +210,7 @@ For debugging and testing data extraction:
 uv run python debug/run_player_extractor.py
 ```
 
-This will fetch real data from Fangraphs and save it to `fangraph_players.json` for inspection.
+This will fetch real data from Fangraphs and save it to `fangraph_pitchers_<year>_<timestamp>.json` and `fangraph_batters_<year>_<timestamp>.json` for inspection.
 
 ## Architecture
 

@@ -153,9 +153,9 @@ def test_run_with_sample_size(mock_handler_class, sample_hitters, sample_pitcher
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
-@patch("fangraphs_api_extractor.runners.player_runner.write_json_file")
+@patch("fangraphs_api_extractor.runners.player_runner.save_extraction_results")
 def test_run_with_output_dir(
-    mock_write_json, mock_handler_class, sample_hitters, sample_pitchers
+    mock_save_results, mock_handler_class, sample_hitters, sample_pitchers
 ):
     """Test run with output directory specified."""
     # Setup mock handler
@@ -170,11 +170,13 @@ def test_run_with_output_dir(
         runner = PlayerRunner(year=2025)
         players = runner.run(output_dir=tmpdir)
 
-        # Verify write_json_file was called
-        mock_write_json.assert_called_once()
-        call_args = mock_write_json.call_args
-        assert call_args[0][1] == tmpdir
-        assert call_args[0][2] == "fangraph_players.json"
+        # Verify save_extraction_results was called with split lists
+        mock_save_results.assert_called_once()
+        _, call_kwargs = mock_save_results.call_args
+        assert call_kwargs["output_dir"] == tmpdir
+        assert call_kwargs["year"] == 2025
+        assert len(call_kwargs["batters"]) == 5
+        assert len(call_kwargs["pitchers"]) == 3
 
         # Verify players returned
         assert players is not None
@@ -297,8 +299,6 @@ def test_run_with_multiple_sources(mock_handler_class):
         ["steamer", "fangraphsdc"]
     )
 
-    # Verify each player has their projection(s)
-    # Since players don't overlap, each should only have one source (no weighted_average)
+    # Verify each player has a projection
     for player in players:
-        assert len(player.projections) == 1
-        assert ("steamer" in player.projections) or ("fangraphsdc" in player.projections)
+        assert player.projection is not None

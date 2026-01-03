@@ -9,9 +9,9 @@ parsing, and serializing player data.
 from typing import Dict, List, Optional
 
 from fangraphs_api_extractor.handlers import PlayerFetchHandler
-from fangraphs_api_extractor.models import PlayerModel
+from fangraphs_api_extractor.models import HitterModel, PitcherModel, PlayerModel
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
-from fangraphs_api_extractor.utils import Logger, serialize_players, write_json_file
+from fangraphs_api_extractor.utils import Logger, save_extraction_results
 from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
 
 
@@ -85,7 +85,9 @@ class PlayerRunner:
         Args:
             sample_size: Optional maximum number of players to process. If provided,
                         this will limit API calls to save time when only a sample is needed.
-            output_dir: Optional directory path to write the JSON output. If None, no file is written.
+            output_dir: Optional directory path to write JSON output files
+                (fangraph_pitchers_<year>_<timestamp>.json and
+                fangraph_batters_<year>_<timestamp>.json). If None, no file is written.
 
         Returns:
             List of PlayerModel objects if successful, None otherwise
@@ -115,11 +117,20 @@ class PlayerRunner:
             players = players[:sample_size]
             self.log.info(f"Limited to {len(players)} players")
 
-        # Serialize player data
-        player_data = serialize_players(players)
+        hitters: List[PlayerModel] = [
+            player for player in players if isinstance(player, HitterModel)
+        ]
+        pitchers: List[PlayerModel] = [
+            player for player in players if isinstance(player, PitcherModel)
+        ]
 
         # Write to file if output directory is provided
         if output_dir:
-            write_json_file(player_data, output_dir, "fangraph_players.json")
+            save_extraction_results(
+                pitchers=pitchers,
+                batters=hitters,
+                output_dir=output_dir,
+                year=self.year,
+            )
 
         return players

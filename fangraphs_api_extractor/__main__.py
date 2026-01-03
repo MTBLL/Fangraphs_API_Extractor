@@ -25,20 +25,20 @@ def parse_args():
         help="Number of threads to use for player hydration (default: 4x CPU cores)",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch-size",
         type=int,
         default=100,
         help="Number of players to process in each batch for progress tracking (default: 100)",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         "-o",
         type=str,
         default=".",
         help="Path to write JSON output (default: current directory)",
     )
     parser.add_argument(
-        "--sample_size",
+        "--sample-size",
         type=int,
         default=None,
         help="Optional maximum number of players to process for sampling",
@@ -58,7 +58,7 @@ def parse_args():
         help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
     )
     parser.add_argument(
-        "--winter_meetings",
+        "--winter-meetings",
         action="store_true",
         help="Use winter meetings projection mix (steamer 75%%, fangraphsdc 25%%). Default is nominal mix (atc 50%%, steamer 25%%, zips 25%%).",
     )

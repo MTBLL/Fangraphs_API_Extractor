@@ -48,8 +48,8 @@ class TestMultiSourceIntegration:
         steamer_player = steamer_players[0]
         assert steamer_player.name == "Corbin Carroll"
         assert steamer_player.playerid == "25878"
-        assert "steamer" in steamer_player.projections
-        steamer_proj = cast(HitterProjectionModel, steamer_player.projections["steamer"])
+        assert isinstance(steamer_player.projection, HitterProjectionModel)
+        steamer_proj = cast(HitterProjectionModel, steamer_player.projection)
         assert steamer_proj.hr == 25  # Rounded from 25.3512
 
         # Parse fangraphsdc data (first player: Aaron Judge)
@@ -62,8 +62,8 @@ class TestMultiSourceIntegration:
         dc_player = dc_players[0]
         assert dc_player.name == "Aaron Judge"
         assert dc_player.playerid == "15640"
-        assert "fangraphsdc" in dc_player.projections
-        dc_proj = cast(HitterProjectionModel, dc_player.projections["fangraphsdc"])
+        assert isinstance(dc_player.projection, HitterProjectionModel)
+        dc_proj = cast(HitterProjectionModel, dc_player.projection)
         assert dc_proj.hr == 45
 
     def test_parse_multiple_fangraphsdc_players(self, fangraphsdc_hitter_data):
@@ -78,10 +78,9 @@ class TestMultiSourceIntegration:
         )
 
         assert len(dc_players) == 3
-        # All should have fangraphsdc projections
+        # All should have projections
         for player in dc_players:
-            assert "fangraphsdc" in player.projections
-            proj = cast(HitterProjectionModel, player.projections["fangraphsdc"])
+            proj = cast(HitterProjectionModel, player.projection)
             assert proj.hr is not None
 
     def test_weighted_average_with_same_player_different_sources(
@@ -110,6 +109,8 @@ class TestMultiSourceIntegration:
         # Both should be Corbin Carroll
         assert players_steamer[0].playerid == players_dc[0].playerid
 
+        steamer_proj = cast(HitterProjectionModel, players_steamer[0].projection)
+
         # Merge with 75% steamer, 25% fangraphsdc weights
         players_by_source = {
             "steamer": players_steamer,
@@ -122,14 +123,8 @@ class TestMultiSourceIntegration:
         assert len(merged_players) == 1
         player = merged_players[0]
 
-        # Should have both source projections plus weighted average
-        assert "steamer" in player.projections
-        assert "fangraphsdc" in player.projections
-        assert "weighted_average" in player.projections
-
         # Weighted average should exist
-        avg_proj = cast(HitterProjectionModel, player.projections["weighted_average"])
-        steamer_proj = cast(HitterProjectionModel, player.projections["steamer"])
+        avg_proj = cast(HitterProjectionModel, player.projection)
 
         # Since both sources are identical, weighted average should equal the original
         # (75% + 25% of same value = 100% of that value)
@@ -170,12 +165,10 @@ class TestMultiSourceIntegration:
 
         # None should have weighted_average since no player appears in both sources
         for player in merged_players:
-            assert "weighted_average" not in player.projections
-            # Each should have exactly 1 source
-            assert len(player.projections) == 1
+            assert player.projection is not None
 
-    def test_projection_source_names_are_preserved(self, fangraphsdc_hitter_data):
-        """Test that projection source names are correctly stored in player objects."""
+    def test_projection_data_is_preserved(self, fangraphsdc_hitter_data):
+        """Test that projection data is stored in player objects."""
         dc_manager = PlayersManager("hitters")
         dc_players = dc_manager.parse_players(
             fangraphsdc_hitter_data[0:1], projection_source="fangraphsdc"
@@ -183,11 +176,7 @@ class TestMultiSourceIntegration:
 
         player = dc_players[0]
 
-        # Should have projection stored under the correct source name
-        assert "fangraphsdc" in player.projections
-        assert "steamer" not in player.projections
-
         # Projection should have the expected data
-        proj = cast(HitterProjectionModel, player.projections["fangraphsdc"])
+        proj = cast(HitterProjectionModel, player.projection)
         assert proj.pa == 672  # From Aaron Judge fixture
         assert proj.hr == 45

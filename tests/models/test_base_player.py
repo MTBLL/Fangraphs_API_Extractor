@@ -1,13 +1,18 @@
 """Tests for base_player.py to achieve 100% coverage."""
 
-import json
-
 import pytest
 
-from fangraphs_api_extractor.models import HitterModel, PitcherModel, PlayerModel
-
-
-
+from fangraphs_api_extractor.models import (
+    HitterATCProjectionModel,
+    HitterModel,
+    HitterProjectionModel,
+    HitterTHEBATProjectionModel,
+    PitcherATCProjectionModel,
+    PitcherModel,
+    PitcherProjectionModel,
+    PitcherTHEBATProjectionModel,
+    PlayerModel,
+)
 
 def test_parse_player_pitcher_atc():
     """Test parse_player with pitcher data and ATC projection system."""
@@ -26,7 +31,7 @@ def test_parse_player_pitcher_atc():
     player = PlayerModel.parse_player(data, projection_source="atc")
 
     assert isinstance(player, PitcherModel)
-    assert "atc" in player.projections
+    assert isinstance(player.projection, PitcherATCProjectionModel)
 
 
 def test_parse_player_pitcher_the_bat():
@@ -46,7 +51,7 @@ def test_parse_player_pitcher_the_bat():
     player = PlayerModel.parse_player(data, projection_source="the_bat")
 
     assert isinstance(player, PitcherModel)
-    assert "the_bat" in player.projections
+    assert isinstance(player.projection, PitcherTHEBATProjectionModel)
 
 
 def test_parse_player_pitcher_generic():
@@ -66,7 +71,7 @@ def test_parse_player_pitcher_generic():
     player = PlayerModel.parse_player(data, projection_source="unknown_system")
 
     assert isinstance(player, PitcherModel)
-    assert "unknown_system" in player.projections
+    assert isinstance(player.projection, PitcherProjectionModel)
 
 
 def test_parse_player_hitter_atc():
@@ -85,7 +90,7 @@ def test_parse_player_hitter_atc():
     player = PlayerModel.parse_player(data, projection_source="atc")
 
     assert isinstance(player, HitterModel)
-    assert "atc" in player.projections
+    assert isinstance(player.projection, HitterATCProjectionModel)
 
 
 def test_parse_player_hitter_the_bat():
@@ -104,7 +109,7 @@ def test_parse_player_hitter_the_bat():
     player = PlayerModel.parse_player(data, projection_source="the_bat")
 
     assert isinstance(player, HitterModel)
-    assert "the_bat" in player.projections
+    assert isinstance(player.projection, HitterTHEBATProjectionModel)
 
 
 def test_parse_player_hitter_generic():
@@ -123,7 +128,7 @@ def test_parse_player_hitter_generic():
     player = PlayerModel.parse_player(data, projection_source="zips")
 
     assert isinstance(player, HitterModel)
-    assert "zips" in player.projections
+    assert isinstance(player.projection, HitterProjectionModel)
 
 
 def test_parse_player_unknown_type():
@@ -139,5 +144,3 @@ def test_parse_player_unknown_type():
 
     with pytest.raises(ValueError, match="Unknown player type from data"):
         PlayerModel.parse_player(data)
-
-

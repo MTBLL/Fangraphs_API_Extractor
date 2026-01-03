@@ -37,12 +37,11 @@ def test_hitter_basic_parsing(hitter_steamer_data):
     assert player.xmlbam_id == 682998
     assert "stats.json" in player.stats_api
 
-    # Test that we have the projection source
-    assert "steamer" in player.projections
-    assert isinstance(player.projections["steamer"], HitterSteamerProjectionModel)
+    # Test that we have the projection
+    assert isinstance(player.projection, HitterSteamerProjectionModel)
 
     # Test some basic projection data
-    proj = player.projections["steamer"]
+    proj = player.projection
     assert proj.hr == 25  # Integer conversion from 25.3512
     assert proj.h == 151  # Integer conversion from 151.182
     assert proj.pa == 657.643

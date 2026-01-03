@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from fangraphs_api_extractor.utils import Logger
@@ -47,25 +48,23 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
                 "xmlbam_id": getattr(player, "xmlbam_id", -1),
                 "slug": getattr(player, "slug", ""),
                 "stats_api": getattr(player, "stats_api", ""),
-                "projections": {},
+                "projection": {},
             }
 
             # Add projection data
-            if hasattr(player, "projections"):
+            if hasattr(player, "projection"):
                 if i < 5:
-                    log.debug(f"Projections type: {type(player.projections)}")
+                    log.debug(f"Projection type: {type(getattr(player, 'projection'))}")
 
                 try:
-                    for proj_name, proj_data in player.projections.items():
-                        if i < 5:
-                            log.debug(f"Processing projection: {proj_name}")
-
-                        if hasattr(proj_data, "model_dump"):
-                            # Convert projection model to dictionary using model_dump
-                            proj_dict = proj_data.model_dump(exclude_none=True)
-                            serialized_player["projections"][proj_name] = proj_dict
+                    proj_data = player.projection
+                    if proj_data is not None and hasattr(proj_data, "model_dump"):
+                        # Convert projection model to dictionary using model_dump
+                        serialized_player["projection"] = proj_data.model_dump(
+                            exclude_none=True
+                        )
                 except Exception as proj_e:
-                    log.error(f"Error processing projections: {proj_e}")
+                    log.error(f"Error processing projection: {proj_e}")
 
             player_data_list.append(serialized_player)
 
@@ -86,39 +85,63 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
     return player_data_list
 
 
-def write_json_file(
-    data: List[Dict],
-    dir_path: str,
-    file_name: str,
+def save_extraction_results(
+    pitchers: List["PlayerModel"],
+    batters: List["PlayerModel"],
+    output_dir: str,
+    year: Optional[int] = None,
+    timestamp: Optional[str] = None,
     indent: Optional[int] = 2,
 ) -> None:
     """
-    Write player data to a JSON file.
+    Serialize and save extracted player data to JSON files.
 
     Args:
-        data: Data to write (JSON-serializable)
-        dir_path: Directory path to output file
-        file_name: Name of the output file
+        pitchers: List of pitcher PlayerModel objects
+        batters: List of batter PlayerModel objects
+        output_dir: Directory path to write JSON output files
+        year: Optional year to include in file names
+        timestamp: Optional timestamp override (format: YYYYMMDD_HHMMSS)
         indent: Indentation level for JSON formatting
     """
-    logger = Logger("write_json_file")
+    logger = Logger("save_extraction_results")
     log = logger.logging
-    full_path = os.path.join(dir_path, file_name)
-    log.debug(f"Writing data to {full_path}")
-    log.debug(f"Data contains {len(data)} items")
+    log.info(f"Saving {len(pitchers)} pitchers and {len(batters)} batters")
 
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(os.path.abspath(full_path)), exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    name_parts = ["fangraph_pitchers"]
+    if year is not None:
+        name_parts.append(str(year))
+    name_parts.append(timestamp)
+    pitcher_file_name = "_".join(name_parts) + ".json"
+
+    name_parts = ["fangraph_batters"]
+    if year is not None:
+        name_parts.append(str(year))
+    name_parts.append(timestamp)
+    batter_file_name = "_".join(name_parts) + ".json"
+
+    pitcher_data = serialize_players(pitchers)
+    batter_data = serialize_players(batters)
+
+    pitcher_path = os.path.join(output_dir, pitcher_file_name)
+    batter_path = os.path.join(output_dir, batter_file_name)
 
     try:
-        # Write the data to the file
-        with open(full_path, "w") as f:
-            json.dump(data, f, indent=indent)
-
-        log.info(f"Data successfully written to {full_path}")
-
+        with open(pitcher_path, "w") as f:
+            json.dump(pitcher_data, f, indent=indent)
+        log.info(f"Saved {len(pitchers)} pitchers to {pitcher_path}")
     except Exception as e:
-        log.error(f"Error writing data to {full_path}: {e}")
+        log.error(f"Error writing pitchers to {pitcher_path}: {e}")
+
+    try:
+        with open(batter_path, "w") as f:
+            json.dump(batter_data, f, indent=indent)
+        log.info(f"Saved {len(batters)} batters to {batter_path}")
+    except Exception as e:
+        log.error(f"Error writing batters to {batter_path}: {e}")
 
 
 def get_nested_values(
