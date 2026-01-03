@@ -19,7 +19,7 @@ def calculate_weighted_average_projections(
     Calculate weighted average of projections from multiple sources.
 
     Handles cases where not all sources have the same stats available by
-    redistributing weights proportionally among sources that have each stat.
+    redistributing missing weight evenly among sources that have each stat.
     Preserves integer types by rounding when appropriate.
 
     Args:
@@ -54,6 +54,7 @@ def calculate_weighted_average_projections(
 
         values_to_average = []
         weights_to_use = []
+        missing_weight = 0.0
         is_integer_field = False
 
         # Collect values and weights from each source
@@ -71,9 +72,16 @@ def calculate_weighted_average_projections(
 
                 values_to_average.append(float(field_value))
                 weights_to_use.append(weights[source_name])
+            else:
+                missing_weight += weights[source_name]
 
         # Calculate weighted average if we have values
         if values_to_average and weights_to_use:
+            # Split missing weight evenly across sources with values for this field.
+            if missing_weight > 0:
+                redistributed = missing_weight / len(weights_to_use)
+                weights_to_use = [w + redistributed for w in weights_to_use]
+
             # Normalize weights for only the sources that have this field
             weight_sum = sum(weights_to_use)
             if weight_sum > 0:
@@ -99,14 +107,16 @@ def merge_player_projections(
 
     Takes players fetched from different projection sources and combines them,
     calculating weighted averages for all projection fields. Handles cases where
-    sources have different stats available by redistributing weights proportionally.
+    sources have different stats available by redistributing missing weight evenly.
+    Aggregates per-source projections onto a single player per playerid and
+    clears transient projections after merging.
 
     Args:
         players_by_source: Dictionary mapping source name to list of PlayerModel objects
         weights: Dictionary mapping source names to normalized weights
 
     Returns:
-        List of PlayerModel objects with all source projections and averaged projections
+        List of PlayerModel objects with a single weighted projection
 
     Example:
         >>> players_by_source = {
@@ -120,36 +130,39 @@ def merge_player_projections(
         return []
 
     # Build a dictionary of players by playerid
-    players_by_id: Dict[int, Any] = {}
+    players_by_id: Dict[str, Any] = {}
 
-    # First pass: collect all players and their projections by ID
+    # First pass: collect all players and attach projections to the base player
     for source_name, players in players_by_source.items():
         for player in players:
             player_id = player.playerid
 
-            # Initialize player entry if not exists
-            if player_id not in players_by_id:
-                # Use the first player we encounter as the base
-                players_by_id[player_id] = player
+            base_player = players_by_id.get(player_id)
+            if base_player is None:
+                base_player = player
+                players_by_id[player_id] = base_player
+
+            source_projections = getattr(player, "_source_projections", None)
+            if source_projections:
+                if source_projections is not base_player._source_projections:
+                    base_player._source_projections.update(source_projections)
             else:
-                # Merge projections from this source into the existing player
-                if source_name in player.projections:
-                    players_by_id[player_id].projections[source_name] = (
-                        player.projections[source_name]
-                    )
+                projection = getattr(player, "projection", None)
+                if projection is not None:
+                    base_player._source_projections[source_name] = projection
+
+            if player is not base_player:
+                player.projection = None
+                if hasattr(player, "_source_projections"):
+                    player._source_projections.clear()
 
     # Second pass: calculate weighted averages for each player
-    for player_id, player in players_by_id.items():
-        if len(player.projections) > 1:
-            # Calculate weighted average
-            averaged_proj = calculate_weighted_average_projections(
-                player.projections, weights
-            )
-
-            # Store averaged projection with a special key
+    for player in players_by_id.values():
+        projections = player._source_projections
+        if len(projections) > 1:
+            averaged_proj = calculate_weighted_average_projections(projections, weights)
             if averaged_proj:
-                # Determine projection type using match statement
-                first_proj = next(iter(player.projections.values()))
+                first_proj = next(iter(projections.values()))
                 avg_model: Union[
                     HitterProjectionModel, PitcherProjectionModel, BaseProjectionModel
                 ]
@@ -159,9 +172,15 @@ def merge_player_projections(
                     case PitcherProjectionModel():
                         avg_model = PitcherProjectionModel(**averaged_proj)
                     case _:
-                        # Fallback to base model
                         avg_model = BaseProjectionModel(**averaged_proj)
+                player.projection = avg_model
+            else:
+                player.projection = next(iter(projections.values()))
+        elif projections:
+            player.projection = next(iter(projections.values()))
+        else:
+            player.projection = None
 
-                player.projections["weighted_average"] = avg_model
+        player._source_projections.clear()
 
     return list(players_by_id.values())

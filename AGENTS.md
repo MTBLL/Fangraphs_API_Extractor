@@ -70,10 +70,9 @@ python debug/run_player_extractor.py
 2. **Data Flow**:
    ```python
    # API → Parse → Serialize → Save
-   data = fangraphs.get_projections_data(...)
-   players = parse_players(data, logger)
-   serialized = serialize_players(players, logger)
-   write_json_file(serialized, output_path, logger)
+   hitters = handler.fetch_hitters(...)
+   pitchers = handler.fetch_pitchers(...)
+   save_extraction_results(pitchers, hitters, output_path, year=year)
    ```
 
 3. **Validation**:

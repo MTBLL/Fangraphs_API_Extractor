@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Debug runner script for the Fangraphs API Extractor.
-This script runs the player extractor and saves the output to a JSON file.
+This script runs the player extractor and saves the output to JSON files.
 It mimics the main entry point but with additional debug output.
 """
 
@@ -45,7 +45,8 @@ def main():
         pitchers = [
             p
             for p in players
-            if any(hasattr(proj, "era") for proj in p.projections.values())
+            if getattr(p, "projection", None) is not None
+            and hasattr(p.projection, "era")
         ]
 
         if pitchers:
@@ -55,21 +56,19 @@ def main():
             print(f"Team: {pitcher.team}")
             print(f"Player ID: {pitcher.playerid}")
             print(f"Stats API: {pitcher.stats_api}")
-            print(f"Available projection systems: {list(pitcher.projections.keys())}")
-
-            # Show some key stats from the first projection system
-            if pitcher.projections:
-                proj_name = list(pitcher.projections.keys())[0]
-                proj = pitcher.projections[proj_name]
+            # Show some key stats from the projection
+            if pitcher.projection:
+                proj = pitcher.projection
                 print(
-                    f"Projection ({proj_name}): {getattr(proj, 'wins', 'N/A')} W, {getattr(proj, 'era', 'N/A')} ERA"
+                    f"Projection: {getattr(proj, 'wins', 'N/A')} W, {getattr(proj, 'era', 'N/A')} ERA"
                 )
 
         # Find a hitter to check
         hitters = [
             p
             for p in players
-            if any(hasattr(proj, "hr") for proj in p.projections.values())
+            if getattr(p, "projection", None) is not None
+            and hasattr(p.projection, "hr")
         ]
 
         if hitters:
@@ -79,14 +78,11 @@ def main():
             print(f"Team: {hitter.team}")
             print(f"Player ID: {hitter.playerid}")
             print(f"Stats API: {hitter.stats_api}")
-            print(f"Available projection systems: {list(hitter.projections.keys())}")
-
-            # Show some key stats from the first projection system
-            if hitter.projections:
-                proj_name = list(hitter.projections.keys())[0]
-                proj = hitter.projections[proj_name]
+            # Show some key stats from the projection
+            if hitter.projection:
+                proj = hitter.projection
                 print(
-                    f"Projection ({proj_name}): {getattr(proj, 'hr', 'N/A')} HR, {getattr(proj, 'avg', 'N/A')} AVG"
+                    f"Projection: {getattr(proj, 'hr', 'N/A')} HR, {getattr(proj, 'avg', 'N/A')} AVG"
                 )
 
         sys.exit(0)

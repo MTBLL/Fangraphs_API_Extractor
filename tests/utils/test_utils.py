@@ -9,8 +9,8 @@ import pytest
 from fangraphs_api_extractor.models import HitterModel
 from fangraphs_api_extractor.utils.utils import (
     get_nested_values,
+    save_extraction_results,
     serialize_players,
-    write_json_file,
 )
 
 
@@ -44,7 +44,8 @@ def test_serialize_players_single(sample_hitter):
     assert result[0]["team"] == "NYY"
     assert result[0]["playerid"] == "15640"
     assert result[0]["slug"] == "aaron-judge"
-    assert "projections" in result[0]
+    assert "projection" in result[0]
+    assert result[0]["projection"] == {}
 
 
 def test_serialize_players_multiple(sample_hitter):
@@ -62,8 +63,8 @@ def test_serialize_players_empty():
     assert result == []
 
 
-def test_serialize_players_with_projections(sample_hitter):
-    """Test that projections are included in serialization."""
+def test_serialize_players_with_projection(sample_hitter):
+    """Test that projection data is included in serialization."""
     # Add a projection
     from fangraphs_api_extractor.models import HitterSteamerProjectionModel
 
@@ -74,62 +75,72 @@ def test_serialize_players_with_projections(sample_hitter):
         "HR": 30,
         "AVG": 0.300,
     }
-    sample_hitter.projections["steamer"] = HitterSteamerProjectionModel.model_validate(
-        proj_data
-    )
+    sample_hitter.projection = HitterSteamerProjectionModel.model_validate(proj_data)
 
     result = serialize_players([sample_hitter])
 
-    assert "projections" in result[0]
-    assert "steamer" in result[0]["projections"]
+    assert "projection" in result[0]
     # Check that projection data was serialized (field name is lowercase 'hr')
-    assert result[0]["projections"]["steamer"]["hr"] == 30
+    assert result[0]["projection"]["hr"] == 30
 
 
-def test_write_json_file():
-    """Test writing JSON file."""
-    data = [{"name": "Test Player", "team": "NYY"}]
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        write_json_file(data, tmpdir, "test_output.json")
-
-        # Verify file was created
-        output_path = os.path.join(tmpdir, "test_output.json")
-        assert os.path.exists(output_path)
-
-        # Verify content
-        with open(output_path, "r") as f:
-            loaded_data = json.load(f)
-
-        assert loaded_data == data
-
-
-def test_write_json_file_creates_directory():
-    """Test that write_json_file creates directories if they don't exist."""
-    data = [{"name": "Test Player"}]
+def test_save_extraction_results_from_fixtures(single_pitcher, single_hitter):
+    """Test saving extraction results using real fixture data."""
+    timestamp = "20250101_010203"
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        nested_dir = os.path.join(tmpdir, "nested", "dir")
-        write_json_file(data, nested_dir, "test.json")
+        save_extraction_results(
+            pitchers=[single_pitcher],
+            batters=[single_hitter],
+            output_dir=tmpdir,
+            year=2025,
+            timestamp=timestamp,
+        )
 
-        # Verify file was created in nested directory
-        output_path = os.path.join(nested_dir, "test.json")
-        assert os.path.exists(output_path)
+        pitcher_path = os.path.join(
+            tmpdir, f"fangraph_pitchers_2025_{timestamp}.json"
+        )
+        batter_path = os.path.join(
+            tmpdir, f"fangraph_batters_2025_{timestamp}.json"
+        )
+
+        assert os.path.exists(pitcher_path)
+        assert os.path.exists(batter_path)
+
+        with open(pitcher_path, "r") as f:
+            pitcher_output = json.load(f)
+        with open(batter_path, "r") as f:
+            batter_output = json.load(f)
+
+        assert len(pitcher_output) == 1
+        assert len(batter_output) == 1
+        assert "projection" in pitcher_output[0]
+        assert "projection" in batter_output[0]
 
 
-def test_write_json_file_with_indent():
-    """Test writing JSON file with custom indentation."""
-    data = [{"name": "Test", "nested": {"key": "value"}}]
+def test_save_extraction_results_write_errors(
+    single_pitcher, single_hitter, monkeypatch, tmp_path
+):
+    """Test save_extraction_results handles write errors gracefully."""
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        write_json_file(data, tmpdir, "test.json", indent=4)
+    def fail_open(*_args, **_kwargs):
+        raise OSError("disk full")
 
-        output_path = os.path.join(tmpdir, "test.json")
-        with open(output_path, "r") as f:
-            content = f.read()
+    monkeypatch.setattr("builtins.open", fail_open)
 
-        # Verify indentation (4 spaces)
-        assert "    " in content
+    save_extraction_results(
+        pitchers=[single_pitcher],
+        batters=[single_hitter],
+        output_dir=str(tmp_path),
+        year=2025,
+        timestamp="20250101_010203",
+    )
+
+    pitcher_path = tmp_path / "fangraph_pitchers_2025_20250101_010203.json"
+    batter_path = tmp_path / "fangraph_batters_2025_20250101_010203.json"
+
+    assert not pitcher_path.exists()
+    assert not batter_path.exists()
 
 
 def test_get_nested_values_simple():
@@ -217,26 +228,26 @@ def test_serialize_players_with_projection_error():
     # Create a projection that will raise an exception
     bad_projection = MagicMock()
     bad_projection.model_dump.side_effect = Exception("Projection serialization error")
-    player.projections = {"bad_proj": bad_projection}
+    player.projection = bad_projection
 
     result = serialize_players([player])
 
-    # Should still serialize the player with empty projections
+    # Should still serialize the player with empty projection
     assert len(result) == 1
     assert result[0]["name"] == "Test Player"
-    assert result[0]["projections"] == {}
+    assert result[0]["projection"] == {}
 
 
 def test_serialize_players_with_player_error():
     """Test serialization when player processing completely fails."""
 
-    # Create a player that has a name but raises exception on projections access
+    # Create a player that has a name but raises exception on projection access
     class BadPlayer:
         name = "Error Player"
 
         @property
-        def projections(self):
-            raise RuntimeError("Cannot access projections")
+        def projection(self):
+            raise RuntimeError("Cannot access projection")
 
     result = serialize_players([BadPlayer()])  # type: ignore[list-item]
 
@@ -244,18 +255,3 @@ def test_serialize_players_with_player_error():
     assert len(result) == 1
     assert "error" in result[0]
     assert result[0]["name"] == "Error Player"
-
-
-def test_write_json_file_with_error():
-    """Test write_json_file when file writing fails."""
-    import tempfile
-    from unittest.mock import patch
-
-    data = [{"name": "Test"}]
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Try to write to a read-only directory (simulate write error)
-        with patch("builtins.open", side_effect=PermissionError("Permission denied")):
-            # Should log error but not raise exception
-            write_json_file(data, tmpdir, "test.json")
-            # Test passes if no exception is raised

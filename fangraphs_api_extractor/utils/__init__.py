@@ -5,8 +5,8 @@ __all__ = [
     "FANGRAPHS_PROJECTIONS_ENDPOINT",
     "PROJECTION_SYSTEMS",
     "USER_AGENT_HEADER",
-    "write_json_file",
     "serialize_players",
+    "save_extraction_results",
     "normalize_string",
     "get_nested_values",
 ]
@@ -20,4 +20,8 @@ from .constants import (
 )
 from .logger import Logger
 from .string_utils import normalize_string
-from .utils import get_nested_values, serialize_players, write_json_file
+from .utils import (
+    get_nested_values,
+    save_extraction_results,
+    serialize_players,
+)

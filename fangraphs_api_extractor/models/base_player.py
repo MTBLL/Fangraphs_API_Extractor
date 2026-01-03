@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, ForwardRef, Optional, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from fangraphs_api_extractor.utils import normalize_string
 
@@ -142,8 +142,11 @@ class PlayerModel(BaseModel):
         # Handle URL transformation
         return self.upurl.replace("stats", "stats.json")
 
-    # Dictionary to store projections from different sources
-    projections: Dict[str, BaseProjectionModel] = {}
+    # Single weighted projection for the player
+    projection: Optional[BaseProjectionModel] = None
+
+    # Track per-source projections during merge without exporting
+    _source_projections: Dict[str, BaseProjectionModel] = PrivateAttr(default_factory=dict)
 
     @classmethod
     def parse_player(
@@ -212,7 +215,8 @@ class PlayerModel(BaseModel):
         # Create projection instance
         projection = proj_cls.model_validate(data)
 
-        # Add projection to player
-        player.projections[projection_source] = projection
+        # Attach the projection to the player
+        player.projection = projection
+        player._source_projections[projection_source] = projection
 
         return player
