@@ -116,9 +116,10 @@ def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": sample_hitters + sample_pitchers
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": sample_hitters},
+        {"steamer": sample_pitchers},
+    )
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -129,7 +130,9 @@ def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     assert len(players) == 8  # 5 hitters + 3 pitchers
 
     # Verify handler method was called with correct sources
-    mock_handler.fetch_all_players_multi_source.assert_called_once_with(["steamer"])
+    mock_handler.fetch_all_players_multi_source.assert_called_once_with(
+        {"batters": ["steamer"], "pitchers": ["steamer"]}
+    )
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
@@ -138,9 +141,10 @@ def test_run_with_sample_size(mock_handler_class, sample_hitters, sample_pitcher
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": sample_hitters + sample_pitchers
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": sample_hitters},
+        {"steamer": sample_pitchers},
+    )
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -161,9 +165,10 @@ def test_run_with_output_dir(
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": sample_hitters + sample_pitchers
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": sample_hitters},
+        {"steamer": sample_pitchers},
+    )
     mock_handler_class.return_value = mock_handler
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -189,9 +194,10 @@ def test_run_without_output_dir(mock_handler_class, sample_hitters, sample_pitch
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": sample_hitters + sample_pitchers
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": sample_hitters},
+        {"steamer": sample_pitchers},
+    )
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -208,7 +214,10 @@ def test_run_with_empty_results(mock_handler_class):
     # Setup mock handler to return empty result
     mock_handler = MagicMock()
     # Mock the multi-source fetch method returning empty source
-    mock_handler.fetch_all_players_multi_source.return_value = {"steamer": []}
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": []},
+        {"steamer": []},
+    )
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2025)
@@ -226,9 +235,10 @@ def test_run_creates_handler_with_correct_year(
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": sample_hitters + sample_pitchers
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": sample_hitters},
+        {"steamer": sample_pitchers},
+    )
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2024)
@@ -277,15 +287,21 @@ def test_run_with_multiple_sources(mock_handler_class):
     # Setup mock handler
     mock_handler = MagicMock()
     # Mock the multi-source fetch method returning data from two sources
-    mock_handler.fetch_all_players_multi_source.return_value = {
-        "steamer": steamer_players,
-        "fangraphsdc": fangraphsdc_players,
-    }
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"steamer": steamer_players, "fangraphsdc": fangraphsdc_players},
+        {"steamer": [], "fangraphsdc": []},
+    )
     mock_handler_class.return_value = mock_handler
 
     # Create runner with multiple sources and weights
-    sources = ["steamer", "fangraphsdc"]
-    weights = {"steamer": 0.75, "fangraphsdc": 0.25}
+    sources = {
+        "batters": ["steamer", "fangraphsdc"],
+        "pitchers": ["steamer", "fangraphsdc"],
+    }
+    weights = {
+        "batters": {"steamer": 0.75, "fangraphsdc": 0.25},
+        "pitchers": {"steamer": 0.75, "fangraphsdc": 0.25},
+    }
     runner = PlayerRunner(year=2025, sources=sources, weights=weights)
     players = runner.run()
 
@@ -295,7 +311,10 @@ def test_run_with_multiple_sources(mock_handler_class):
 
     # Verify handler method was called with correct sources
     mock_handler.fetch_all_players_multi_source.assert_called_once_with(
-        ["steamer", "fangraphsdc"]
+        {
+            "batters": ["steamer", "fangraphsdc"],
+            "pitchers": ["steamer", "fangraphsdc"],
+        }
     )
 
     # Verify each player has a projection

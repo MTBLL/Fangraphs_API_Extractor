@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from .base_player import BaseProjectionModel, PlayerModel
 
@@ -56,6 +56,13 @@ class PitcherProjectionModel(BaseProjectionModel):
     ra_talent_sd: Optional[float] = None
     chance_ra_se: Optional[float] = None
     total_ra_se: Optional[float] = None
+
+    @computed_field(return_type=Optional[float], alias="SVHD")
+    @property
+    def svhd(self) -> Optional[float]:
+        if self.saves is None and self.holds is None:
+            return None
+        return (self.saves or 0) + (self.holds or 0)
 
 
 class PitcherSteamerProjectionModel(PitcherProjectionModel):

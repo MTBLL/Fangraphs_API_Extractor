@@ -208,6 +208,31 @@ class TestCalculateWeightedAverageProjections:
         # test_stat should be averaged
         assert result["test_stat"] == 25  # (30 + 20) / 2 = 25
 
+    def test_calculate_weighted_average_projections_with_oopsy_source(
+        self, mason_miller_oopsy, mason_miller_fangraphsdc
+    ):
+        proj_oopsy = mason_miller_oopsy.projection
+        proj_dc = mason_miller_fangraphsdc.projection
+        assert proj_oopsy is not None
+        assert proj_dc is not None
+
+        projections = {"oopsy": proj_oopsy, "fangraphsdc": proj_dc}
+        weights = {"oopsy": 0.6, "fangraphsdc": 0.4}
+
+        result = _calculate_weighted_average_projections(projections, weights)
+
+        expected_wins = 0.6 * proj_oopsy.wins + 0.4 * proj_dc.wins
+        expected_strikeouts = 0.6 * proj_oopsy.strikeouts + 0.4 * proj_dc.strikeouts
+        expected_era = 0.6 * proj_oopsy.era + 0.4 * proj_dc.era
+        expected_fpts_ip = 0.6 * proj_oopsy.fpts_ip + 0.4 * proj_dc.fpts_ip
+        expected_svhd = 0.6 * proj_oopsy.svhd + 0.4 * proj_dc.svhd
+
+        assert abs(result["wins"] - expected_wins) < 0.0001
+        assert abs(result["strikeouts"] - expected_strikeouts) < 0.0001
+        assert abs(result["era"] - expected_era) < 0.0001
+        assert abs(result["fpts_ip"] - expected_fpts_ip) < 0.0001
+        assert abs(result["svhd"] - expected_svhd) < 0.0001
+
 
 class TestMergePlayerProjections:
     """Test player projection merging functionality."""
@@ -383,7 +408,10 @@ class TestMergePlayerProjections:
         )
         player2 = cast(PitcherModel, player2)
 
-        players_by_source: dict[str, list[PlayerModel]] = {"source1": [player1], "source2": [player2]}
+        players_by_source: dict[str, list[PlayerModel]] = {
+            "source1": [player1],
+            "source2": [player2],
+        }
         weights = {"source1": 0.6, "source2": 0.4}
 
         result = merge_player_projections(players_by_source, weights)
@@ -421,7 +449,10 @@ class TestMergePlayerProjections:
 
         player2 = cast(PitcherModel, player2)
 
-        players_by_source: dict[str, list[PlayerModel]] = {"source1": [player1], "source2": [player2]}
+        players_by_source: dict[str, list[PlayerModel]] = {
+            "source1": [player1],
+            "source2": [player2],
+        }
         weights = {"source1": 0.6, "source2": 0.4}
 
         result = merge_player_projections(players_by_source, weights)

@@ -102,6 +102,31 @@ def single_pitcher_steamer(fixture_pitchers_steamer) -> PlayerModel:
     return fixture_pitchers_steamer[0]
 
 
+@pytest.fixture
+def fixture_pitchers_oopsy() -> list[PlayerModel]:
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    with open(fixtures_dir / "pitcher_oopsy.json") as f:
+        pitcher_data = json.load(f)
+
+    manager = PlayersManager("pitchers")
+    return manager.parse_players(pitcher_data, projection_source="oopsy")
+
+
+@pytest.fixture
+def single_pitcher_oopsy(fixture_pitchers_oopsy) -> PlayerModel:
+    return fixture_pitchers_oopsy[0]
+
+
+@pytest.fixture
+def mason_miller_oopsy(fixture_pitchers_oopsy) -> PlayerModel:
+    return next(p for p in fixture_pitchers_oopsy if p.playerid == "31757")
+
+
+@pytest.fixture
+def mason_miller_fangraphsdc(fixture_pitchers) -> PlayerModel:
+    return next(p for p in fixture_pitchers if p.playerid == "31757")
+
+
 # Specific player fixtures for consistent testing across sources
 @pytest.fixture
 def aaron_judge_steamer(fixture_hitters_steamer) -> PlayerModel:
