@@ -58,7 +58,6 @@ class PitcherProjectionModel(BaseProjectionModel):
     total_ra_se: Optional[float] = None
 
     @computed_field(return_type=Optional[float], alias="SVHD")
-    @property
     def svhd(self) -> Optional[float]:
         if self.saves is None and self.holds is None:
             return None

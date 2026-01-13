@@ -114,13 +114,13 @@ class PlayerRunner:
             self.fetch_handler.fetch_all_players_multi_source(self.sources)
         )
 
-        hitters = merge_player_projections(
+        merged_hitters = merge_player_projections(
             batters_by_source, self.weights.get("batters", {})
         )
-        pitchers = merge_player_projections(
+        merged_pitchers = merge_player_projections(
             pitchers_by_source, self.weights.get("pitchers", {})
         )
-        players = hitters + pitchers
+        players = merged_hitters + merged_pitchers
         self.log.info(f"Total players: {len(players)}")
 
         # Apply sample size limit if provided
