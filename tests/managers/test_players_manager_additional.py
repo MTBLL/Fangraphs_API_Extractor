@@ -108,7 +108,7 @@ def test_parse_players_pitcher():
 
 def test_parse_players_empty_list():
     """Test parsing empty list."""
-    data = []
+    data: list[dict] = []
 
     manager = PlayersManager("hitters")
     players = manager.parse_players(data)
@@ -131,7 +131,7 @@ def test_manager_initialization():
 def test_parse_players_with_nested_structure_error():
     """Test parsing with nested structure that has invalid API structure."""
     # This should trigger the KeyError/IndexError exception handling
-    data = {
+    data: dict = {
         "pageProps": {
             "dehydratedState": {
                 "queries": []  # Empty list will cause IndexError
@@ -220,7 +220,7 @@ def test_parse_nested_player_with_individual_error():
 def test_parse_nested_with_pageprops_keyerror():
     """Test to trigger the pageProps debug logging path (line 59-60)."""
     # Create data with pageProps but missing nested keys to trigger KeyError
-    data = {
+    data: dict = {
         "pageProps": {
             "dehydratedState": {
                 "queries": [

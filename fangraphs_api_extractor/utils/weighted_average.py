@@ -5,9 +5,9 @@ This module provides functions to calculate weighted averages across multiple
 projection sources for baseball player statistics.
 """
 
-from typing import Any, Dict, List, Mapping, Sequence, Union
+from typing import Any, Dict, List, Mapping, Union
 
-from fangraphs_api_extractor.models import HitterModel, PitcherModel
+from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.models.base_player import BaseProjectionModel
 from fangraphs_api_extractor.models.hitter import HitterProjectionModel
 from fangraphs_api_extractor.models.pitcher import PitcherProjectionModel
@@ -151,9 +151,9 @@ def _calculate_weighted_average_projections(
 
 
 def merge_player_projections(
-    players_by_source: Mapping[str, Sequence[HitterModel | PitcherModel]],
+    players_by_source: Mapping[str, List[PlayerModel]],
     weights: Mapping[str, float],
-) -> List[Any]:
+) -> List[PlayerModel]:
     """
     Merge player projections from multiple sources with weighted averaging.
 
