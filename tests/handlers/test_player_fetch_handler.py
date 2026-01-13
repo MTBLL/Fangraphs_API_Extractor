@@ -181,27 +181,33 @@ def test_fetch_all_players_multi_source_success(
     )
 
     handler = PlayerFetchHandler(mock_core_fangraphs)
-    sources = ["steamer", "fangraphsdc"]
-    players_by_source = handler.fetch_all_players_multi_source(sources)
+    sources = {
+        "batters": ["steamer", "fangraphsdc"],
+        "pitchers": ["steamer", "fangraphsdc"],
+    }
+    batters_by_source, pitchers_by_source = handler.fetch_all_players_multi_source(
+        sources
+    )
 
     # Verify we got data for both sources
-    assert len(players_by_source) == 2
-    assert "steamer" in players_by_source
-    assert "fangraphsdc" in players_by_source
+    assert len(batters_by_source) == 2
+    assert "steamer" in batters_by_source
+    assert "fangraphsdc" in batters_by_source
+    assert len(pitchers_by_source) == 2
+    assert "steamer" in pitchers_by_source
+    assert "fangraphsdc" in pitchers_by_source
 
-    # Verify steamer data (2 hitters + 1 pitcher = 3 total)
-    assert len(players_by_source["steamer"]) == 3
-    steamer_hitters = [p for p in players_by_source["steamer"] if isinstance(p, HitterModel)]
-    steamer_pitchers = [p for p in players_by_source["steamer"] if isinstance(p, PitcherModel)]
-    assert len(steamer_hitters) == 2
-    assert len(steamer_pitchers) == 1
+    # Verify steamer data (2 hitters, 1 pitcher)
+    assert len(batters_by_source["steamer"]) == 2
+    assert len(pitchers_by_source["steamer"]) == 1
+    assert all(isinstance(p, HitterModel) for p in batters_by_source["steamer"])
+    assert all(isinstance(p, PitcherModel) for p in pitchers_by_source["steamer"])
 
-    # Verify fangraphsdc data (2 hitters + 1 pitcher = 3 total)
-    assert len(players_by_source["fangraphsdc"]) == 3
-    dc_hitters = [p for p in players_by_source["fangraphsdc"] if isinstance(p, HitterModel)]
-    dc_pitchers = [p for p in players_by_source["fangraphsdc"] if isinstance(p, PitcherModel)]
-    assert len(dc_hitters) == 2
-    assert len(dc_pitchers) == 1
+    # Verify fangraphsdc data (2 hitters, 1 pitcher)
+    assert len(batters_by_source["fangraphsdc"]) == 2
+    assert len(pitchers_by_source["fangraphsdc"]) == 1
+    assert all(isinstance(p, HitterModel) for p in batters_by_source["fangraphsdc"])
+    assert all(isinstance(p, PitcherModel) for p in pitchers_by_source["fangraphsdc"])
 
     # Verify API was called 4 times (2 sources × 2 position groups)
     assert mock_core_fangraphs.get_projections_data.call_count == 4
@@ -223,13 +229,18 @@ def test_fetch_all_players_multi_source_single_source(
     )
 
     handler = PlayerFetchHandler(mock_core_fangraphs)
-    sources = ["steamer"]
-    players_by_source = handler.fetch_all_players_multi_source(sources)
+    sources = {"batters": ["steamer"], "pitchers": ["steamer"]}
+    batters_by_source, pitchers_by_source = handler.fetch_all_players_multi_source(
+        sources
+    )
 
     # Verify we got data for one source
-    assert len(players_by_source) == 1
-    assert "steamer" in players_by_source
-    assert len(players_by_source["steamer"]) == 3
+    assert len(batters_by_source) == 1
+    assert "steamer" in batters_by_source
+    assert len(batters_by_source["steamer"]) == 2
+    assert len(pitchers_by_source) == 1
+    assert "steamer" in pitchers_by_source
+    assert len(pitchers_by_source["steamer"]) == 1
 
     # Verify API was called 2 times (1 source × 2 position groups)
     assert mock_core_fangraphs.get_projections_data.call_count == 2
@@ -238,10 +249,13 @@ def test_fetch_all_players_multi_source_single_source(
 def test_fetch_all_players_multi_source_empty_sources(mock_core_fangraphs):
     """Test fetching players with empty sources list."""
     handler = PlayerFetchHandler(mock_core_fangraphs)
-    sources: list[str] = []
-    players_by_source = handler.fetch_all_players_multi_source(sources)
+    sources: dict[str, list[str]] = {}
+    batters_by_source, pitchers_by_source = handler.fetch_all_players_multi_source(
+        sources
+    )
 
-    # Should return empty dictionary
-    assert players_by_source == {}
+    # Should return empty dictionaries
+    assert batters_by_source == {}
+    assert pitchers_by_source == {}
     # API should not be called
     mock_core_fangraphs.get_projections_data.assert_not_called()

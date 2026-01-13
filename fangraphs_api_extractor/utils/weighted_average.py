@@ -74,8 +74,15 @@ def _calculate_weighted_average_projections(
     # Initialize result dictionary
     averaged: Dict[str, Any] = {}
 
+    # Include computed fields (like svhd) in addition to model fields
+    field_names = list(first_proj.__class__.model_fields.keys())
+    computed_fields = getattr(first_proj.__class__, "model_computed_fields", {}) or {}
+    for field_name in computed_fields.keys():
+        if field_name not in field_names:
+            field_names.append(field_name)
+
     # Get all fields from the model class (not instance)
-    for field_name in first_proj.__class__.model_fields.keys():
+    for field_name in field_names:
         # Skip metadata fields that shouldn't be averaged
         if field_name in ["source", "percentiles"]:
             continue

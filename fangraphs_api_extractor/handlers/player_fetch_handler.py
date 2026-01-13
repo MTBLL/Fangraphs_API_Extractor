@@ -5,7 +5,7 @@ This module contains the handler logic for fetching player data
 from the Fangraphs Baseball API and parsing it into PlayerModel objects.
 """
 
-from typing import List, Dict
+from typing import Dict, List, Tuple
 
 from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.models import PlayerModel
@@ -34,9 +34,7 @@ class PlayerFetchHandler:
         self.logger = Logger("PlayerFetchHandler")
         self.log = self.logger.logging
 
-    def fetch_hitters(
-        self, projection_source: str = "steamer"
-    ) -> List[PlayerModel]:
+    def fetch_hitters(self, projection_source: str = "steamer") -> List[PlayerModel]:
         """
         Fetch and parse hitter projections from a specific source.
 
@@ -59,20 +57,18 @@ class PlayerFetchHandler:
                 hitters = hitters_manager.parse_players(
                     hitter_data, projection_source=projection_source
                 )
-                self.log.info(
-                    f"Parsed {len(hitters)} hitters from {projection_source}"
-                )
+                self.log.info(f"Parsed {len(hitters)} hitters from {projection_source}")
                 return hitters
             else:
-                self.log.warning(f"Failed to fetch hitter data from {projection_source}")
+                self.log.warning(
+                    f"Failed to fetch hitter data from {projection_source}"
+                )
                 return []
         except Exception as e:
             self.log.error(f"Error fetching hitter data from {projection_source}: {e}")
             return []
 
-    def fetch_pitchers(
-        self, projection_source: str = "steamer"
-    ) -> List[PlayerModel]:
+    def fetch_pitchers(self, projection_source: str = "steamer") -> List[PlayerModel]:
         """
         Fetch and parse pitcher projections from a specific source.
 
@@ -86,12 +82,12 @@ class PlayerFetchHandler:
             Pitchers use 'thebat' instead of 'thebatx' - this mapping is handled automatically.
         """
         # Map thebatx to thebat for pitchers (pitchers don't have batx data)
-        api_source = "thebat" if projection_source.lower() == "thebatx" else projection_source
+        api_source = (
+            "thebat" if projection_source.lower() == "thebatx" else projection_source
+        )
 
         year = self.core_fangraphs.year
-        self.log.info(
-            f"Fetching pitcher projections for {year} from {api_source}..."
-        )
+        self.log.info(f"Fetching pitcher projections for {year} from {api_source}...")
         try:
             pitcher_data = self.core_fangraphs.get_projections_data(
                 "pit", projections_system=api_source
@@ -106,30 +102,43 @@ class PlayerFetchHandler:
                 )
                 return pitchers
             else:
-                self.log.warning(f"Failed to fetch pitcher data from {projection_source}")
+                self.log.warning(
+                    f"Failed to fetch pitcher data from {projection_source}"
+                )
                 return []
         except Exception as e:
             self.log.error(f"Error fetching pitcher data from {projection_source}: {e}")
             return []
 
     def fetch_all_players_multi_source(
-        self, sources: List[str]
-    ) -> Dict[str, List[PlayerModel]]:
+        self, sources: Dict[str, List[str]]
+    ) -> Tuple[Dict[str, List[PlayerModel]], Dict[str, List[PlayerModel]]]:
         """
         Fetch players from multiple projection sources.
 
         Args:
-            sources: List of projection source names
+            sources: Dictionary mapping positions to lists of projection sources
 
         Returns:
-            Dictionary mapping source names to lists of PlayerModel objects
+            Tuple of dictionaries mapping source names to lists of PlayerModel objects
+            (batters_by_source, pitchers_by_source)
         """
-        all_players_by_source: Dict[str, List[PlayerModel]] = {}
+        batters_by_source: Dict[str, List[PlayerModel]] = {}
+        pitchers_by_source: Dict[str, List[PlayerModel]] = {}
 
-        for source in sources:
-            self.log.info(f"Fetching data from source: {source}")
-            hitters = self.fetch_hitters(projection_source=source)
-            pitchers = self.fetch_pitchers(projection_source=source)
-            all_players_by_source[source] = hitters + pitchers
+        for key in sources:
+            match key:
+                case "batters":
+                    for source in sources["batters"]:
+                        self.log.info(f"Fetching batters data from source: {source}")
+                        hitters = self.fetch_hitters(projection_source=source)
+                        batters_by_source[source] = hitters
+                case "pitchers":
+                    for source in sources["pitchers"]:
+                        self.log.info(f"Fetching pitchers data from source: {source}")
+                        pitchers = self.fetch_pitchers(projection_source=source)
+                        pitchers_by_source[source] = pitchers
+                case _:
+                    self.log.warning(f"Invalid source structure: {key}")
 
-        return all_players_by_source
+        return batters_by_source, pitchers_by_source

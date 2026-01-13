@@ -63,3 +63,17 @@ def test_pitcher_basic_parsing(pitcher_steamer_data):
     # Check that percentiles were captured
     assert proj.q50 == 2.98
     assert proj.tt_q50 == 3.05
+
+
+def test_pitcher_svhd_computed():
+    proj = PitcherSteamerProjectionModel(SV=10, HLD=5)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+    assert proj.svhd == 15
+
+    proj = PitcherSteamerProjectionModel(SV=10)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+    assert proj.svhd == 10
+
+    proj = PitcherSteamerProjectionModel(HLD=5)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+    assert proj.svhd == 5
+
+    proj = PitcherSteamerProjectionModel()  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+    assert proj.svhd is None

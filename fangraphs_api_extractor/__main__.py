@@ -44,11 +44,18 @@ def parse_args():
         help="Optional maximum number of players to process for sampling",
     )
     parser.add_argument(
-        "--sources",
+        "--batter-sources",
         "-s",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc'). Overrides --winter_meetings.",
+        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc,thebatx,oopsy'). Overrides --winter_meetings.",
+    )
+    parser.add_argument(
+        "--pitcher-sources",
+        "-p",
+        type=str,
+        default=None,
+        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc,thebat,oopsy'). Overrides --winter_meetings.",
     )
     parser.add_argument(
         "--weights",
@@ -69,37 +76,65 @@ def parse_args():
 def main():
     """Main CLI entry point."""
     args = parse_args()
-
+    sources: dict = {}
+    weights: list[float] = []
     try:
         # Determine sources and weights based on flags
-        if args.sources:
+        if args.batter_sources:
             # Custom sources provided - use these regardless of --winter_meetings flag
-            sources = [s.strip() for s in args.sources.split(",")]
+            sources["batters"] = [s.strip() for s in args.batter_sources.split(",")]
 
             # Parse weights
             if args.weights:
-                weights = [int(w.strip()) for w in args.weights.split(",")]
-                if len(weights) != len(sources):
+                weights = [float(w.strip()) for w in args.weights.split(",")]
+                if len(weights) != len(sources.get("batters", [])):
                     print(
-                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources)})"
+                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources.get('batters', []))})"
                     )
                     sys.exit(1)
             else:
                 # Equal weights if not provided
-                weights = [1] * len(sources)
+                weights = [1.0] * len(sources.get("batters", []))
+        if args.pitcher_sources:
+            sources["pitchers"] = [s.strip() for s in args.pitcher_sources.split(",")]
+
+            if args.weights:
+                weights = [float(w.strip()) for w in args.weights.split(",")]
+                if len(weights) != len(sources.get("pitchers", [])):
+                    print(
+                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources.get('pitchers', []))})"
+                    )
+                    sys.exit(1)
+            else:
+                # Equal weights if not provided
+                weights = [1.0] * len(sources.get("pitchers", []))
         elif args.winter_meetings:
             # Winter meetings mode: thebatx (50%) + fangraphsdc (50%) + steamer (qq/tt only)
-            sources = ["thebatx", "fangraphsdc", "steamer"]
-            weights = [50, 50, 0]  # steamer weight is 0 (qq/tt fields only)
+            sources = {
+                "batters": ["thebatx", "fangraphsdc", "steamer"],
+                "pitchers": ["oopsy", "fangraphsdc", "steamer"],
+            }
+            weights = [50.0, 50.0, 0.0]  # steamer weight is 0 (qq/tt fields only)
         else:
             # Default regular season mode: thebatx (50%) + fangraphsdc (25%) + atc (25%) + steamer (qq/tt only)
-            sources = ["thebatx", "fangraphsdc", "atc", "steamer"]
-            weights = [50, 25, 25, 0]  # steamer weight is 0 (qq/tt fields only)
+            sources = {
+                "batters": ["thebatx", "fangraphsdc", "atc", "steamer"],
+                "pitchers": ["oopsy", "fangraphsdc", "atc", "steamer"],
+            }
+            weights = [50.0, 25.0, 25.0, 0.0]  # steamer weight is 0 (qq/tt fields only)
 
         # Normalize weights to sum to 1.0
         total_weight = sum(weights)
+        assert "batters" in sources.keys()
         normalized_weights = {
-            source: weight / total_weight for source, weight in zip(sources, weights)
+            "batters": {
+                source: weight / total_weight
+                for source, weight in zip(sources["batters"], weights)
+            },
+            "pitchers": {
+                source: weight / total_weight
+                for source, weight in zip(sources["pitchers"], weights)
+            },
         }
 
         # Initialize the extractor

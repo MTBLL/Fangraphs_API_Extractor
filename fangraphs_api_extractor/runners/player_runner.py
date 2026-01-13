@@ -30,8 +30,8 @@ class PlayerRunner:
         year: int,
         threads: Optional[int] = None,
         batch_size: int = 100,
-        sources: Optional[List[str]] = None,
-        weights: Optional[Dict[str, float]] = None,
+        sources: Optional[Dict[str, List[str]]] = None,
+        weights: Optional[Dict[str, Dict[str, float]]] = None,
     ):
         """
         Initialize the PlayerExtractor.
@@ -40,16 +40,21 @@ class PlayerRunner:
             year: League year to fetch data for
             threads: Number of threads to use for player hydration (default: 4x CPU cores)
             batch_size: Number of players to process in each batch for progress tracking
-            sources: List of projection sources to fetch from (default: ["steamer"])
-            weights: Dictionary mapping source names to normalized weights (default: equal weights)
+            sources: Dictionary mapping positions to lists of projection sources to fetch from
+                (default: {"batters": ["steamer"], "pitchers": ["steamer"]})
+            weights: Dictionary mapping positions to dictionaries mapping projection names
+                to normalized weights (default: equal weights)
         """
         self.year = year
         self.logger = Logger("player_extractor")
         self.log = self.logger.logging
         self.threads = threads
         self.batch_size = batch_size
-        self.sources = sources or ["steamer"]
-        self.weights = weights or {s: 1.0 / len(self.sources) for s in self.sources}
+        self.sources = sources or {"batters": ["steamer"], "pitchers": ["steamer"]}
+        self.weights = weights or {
+            s: {p: 1.0 / len(self.sources[s]) for p in self.sources[s]}
+            for s in self.sources
+        }
         self.core_fangraphs = CoreFangraphs(year=year)
         self.fetch_handler = PlayerFetchHandler(self.core_fangraphs)
 
@@ -93,22 +98,29 @@ class PlayerRunner:
             List of PlayerModel objects if successful, None otherwise
         """
         # Log sources and weights
-        sources_str = ", ".join(self.sources)
-        if len(self.sources) > 1:
-            self.log.info(
-                f"Fetching from multiple sources: {sources_str} "
-                f"with weights: {self.weights}"
-            )
-        else:
-            self.log.info(f"Fetching from single source: {sources_str}")
+        for position, sources in self.sources.items():
+            sources_str = ", ".join(sources)
+            weights = self.weights.get(position, {})
+            if len(sources) > 1:
+                self.log.info(
+                    f"Fetching {position} from multiple sources: {sources_str} "
+                    f"with weights: {weights}"
+                )
+            else:
+                self.log.info(f"Fetching {position} from single source: {sources_str}")
 
         # Fetch from all sources (works for both single and multiple sources)
-        players_by_source = self.fetch_handler.fetch_all_players_multi_source(
-            self.sources
+        batters_by_source, pitchers_by_source = (
+            self.fetch_handler.fetch_all_players_multi_source(self.sources)
         )
 
-        # Merge projections and calculate weighted averages if multiple sources
-        players = merge_player_projections(players_by_source, self.weights)
+        merged_hitters = merge_player_projections(
+            batters_by_source, self.weights.get("batters", {})
+        )
+        merged_pitchers = merge_player_projections(
+            pitchers_by_source, self.weights.get("pitchers", {})
+        )
+        players = merged_hitters + merged_pitchers
         self.log.info(f"Total players: {len(players)}")
 
         # Apply sample size limit if provided
