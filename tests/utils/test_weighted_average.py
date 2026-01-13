@@ -1,6 +1,6 @@
 """Tests for weighted averaging utility functions."""
 
-from typing import Optional
+from typing import Optional, cast
 
 from pydantic import Field
 
@@ -11,7 +11,7 @@ from fangraphs_api_extractor.models.base_player import (
 from fangraphs_api_extractor.models.hitter import HitterModel, HitterProjectionModel
 from fangraphs_api_extractor.models.pitcher import PitcherModel, PitcherProjectionModel
 from fangraphs_api_extractor.utils.weighted_average import (
-    calculate_weighted_average_projections,
+    _calculate_weighted_average_projections,
     merge_player_projections,
 )
 
@@ -41,7 +41,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"steamer": proj1, "fangraphsdc": proj2}
         weights = {"steamer": 0.75, "fangraphsdc": 0.25}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # Check weighted averages: 0.75 * proj1 + 0.25 * proj2
         # Note: Using field names (not aliases)
@@ -66,7 +66,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"steamer": proj1, "fangraphsdc": proj2}
         weights = {"steamer": 0.75, "fangraphsdc": 0.25}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # iso should use only proj1's value (weight redistributed to 1.0)
         assert result["iso"] == 0.200
@@ -82,7 +82,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"source1": proj_a, "source2": proj_b, "source3": proj_c}
         weights = {"source1": 0.6, "source2": 0.3, "source3": 0.1}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # source2 is missing TestStat, so its weight (0.3) is split evenly:
         # source1 -> 0.75, source3 -> 0.25
@@ -100,7 +100,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"steamer": proj1, "fangraphsdc": proj2}
         weights = {"steamer": 0.6, "fangraphsdc": 0.4}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # Check weighted averages: 0.6 * proj1 + 0.4 * proj2
         assert (
@@ -118,7 +118,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"source1": proj1, "source2": proj2}
         weights = {"source1": 0.5, "source2": 0.5}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # Should be simple averages
         assert result["pa"] == (600 + 580) / 2  # 590.0
@@ -133,7 +133,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"source1": proj1, "source2": proj2}
         weights = {"source1": 0.75, "source2": 0.25}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # h and hr should be integers
         assert isinstance(result["h"], int)
@@ -155,7 +155,7 @@ class TestCalculateWeightedAverageProjections:
         # Initial weights: 50%, 30%, 20%
         weights = {"source1": 0.5, "source2": 0.3, "source3": 0.2}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # HR uses all three sources with original weights
         expected_hr = round(0.5 * 30 + 0.3 * 28 + 0.2 * 32)  # 29.8 -> 30
@@ -169,7 +169,7 @@ class TestCalculateWeightedAverageProjections:
 
     def test_empty_projections(self):
         """Test with empty projections dictionary."""
-        result = calculate_weighted_average_projections({}, {})
+        result = _calculate_weighted_average_projections({}, {})
         assert result == {}
 
     def test_source_not_in_weights(self):
@@ -181,7 +181,7 @@ class TestCalculateWeightedAverageProjections:
         # Only provide weight for steamer, not fangraphsdc
         weights = {"steamer": 1.0}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # Should only use steamer (since fangraphsdc not in weights)
         assert result["hr"] == 30
@@ -200,7 +200,7 @@ class TestCalculateWeightedAverageProjections:
         projections = {"source1": proj1, "source2": proj2}
         weights = {"source1": 0.5, "source2": 0.5}
 
-        result = calculate_weighted_average_projections(projections, weights)
+        result = _calculate_weighted_average_projections(projections, weights)
 
         # source and percentiles should NOT be in the result
         assert "source" not in result
@@ -270,6 +270,7 @@ class TestMergePlayerProjections:
         hitter1.projection = HitterProjectionModel(  # pyright: ignore[reportCallIssue]
             PA=600, HR=30, AVG=0.280
         )
+        hitter1 = cast(PlayerModel, hitter1)
 
         # Same hitter with fangraphsdc projection
         hitter2 = HitterModel(  # pyright: ignore[reportCallIssue]
@@ -380,6 +381,7 @@ class TestMergePlayerProjections:
         player2.projection = CustomProjectionModel(  # pyright: ignore[reportCallIssue]
             TestStat=80
         )
+        player2 = cast(PitcherModel, player2)
 
         players_by_source = {"source1": [player1], "source2": [player2]}
         weights = {"source1": 0.6, "source2": 0.4}
@@ -417,6 +419,8 @@ class TestMergePlayerProjections:
         player2.projection = proj2
         player2._source_projections["source2"] = proj2
 
+        player2 = cast(PitcherModel, player2)
+
         players_by_source = {"source1": [player1], "source2": [player2]}
         weights = {"source1": 0.6, "source2": 0.4}
 
@@ -429,3 +433,18 @@ class TestMergePlayerProjections:
         assert player._source_projections == {}
         assert player2.projection is None
         assert player2._source_projections == {}
+
+    def test_merge_player_projections_with_real_data(
+        self, corbin_carroll_thebatx, corbin_carroll_fangraphsdc, corbin_carroll_steamer
+    ):
+        players_by_source = {
+            "thebatx": [corbin_carroll_thebatx],
+            "fangraphsdc": [corbin_carroll_fangraphsdc],
+            "steamer": [corbin_carroll_steamer],
+        }
+        weights = {"thebatx": 0.5, "fangraphsdc": 0.5, "steamer": 0.0}
+        results = merge_player_projections(players_by_source, weights)
+
+        assert len(results) == 1
+        player = results[0]
+        assert player.projection.q10 is not None

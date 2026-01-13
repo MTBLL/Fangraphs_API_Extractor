@@ -3,7 +3,9 @@
     "allow": [
       "Bash(uv run pytest:*)",
       "Bash(cat:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(uv run mypy:*)"
     ]
   },
   "enableAllProjectMcpServers": false

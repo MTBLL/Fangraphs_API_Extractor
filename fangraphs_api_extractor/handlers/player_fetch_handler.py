@@ -81,14 +81,20 @@ class PlayerFetchHandler:
 
         Returns:
             List of pitcher PlayerModel objects
+
+        Note:
+            Pitchers use 'thebat' instead of 'thebatx' - this mapping is handled automatically.
         """
+        # Map thebatx to thebat for pitchers (pitchers don't have batx data)
+        api_source = "thebat" if projection_source.lower() == "thebatx" else projection_source
+
         year = self.core_fangraphs.year
         self.log.info(
-            f"Fetching pitcher projections for {year} from {projection_source}..."
+            f"Fetching pitcher projections for {year} from {api_source}..."
         )
         try:
             pitcher_data = self.core_fangraphs.get_projections_data(
-                "pit", projections_system=projection_source
+                "pit", projections_system=api_source
             )
             if pitcher_data:
                 pitchers_manager = PlayersManager("pitchers")

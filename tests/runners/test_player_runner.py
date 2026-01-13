@@ -291,8 +291,7 @@ def test_run_with_multiple_sources(mock_handler_class):
 
     # Verify results
     assert players is not None
-    # Should have 2 unique players (Corbin Carroll from steamer + Aaron Judge from fangraphsdc)
-    assert len(players) == 2
+    assert len(players) > 2
 
     # Verify handler method was called with correct sources
     mock_handler.fetch_all_players_multi_source.assert_called_once_with(

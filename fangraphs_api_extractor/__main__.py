@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument(
         "--winter-meetings",
         action="store_true",
-        help="Use winter meetings projection mix (steamer 75%%, fangraphsdc 25%%). Default is nominal mix (atc 50%%, steamer 25%%, zips 25%%).",
+        help="Use winter meetings projection mix (thebatx 50%%, fangraphsdc 50%%, plus steamer for qq/tt only). Default is regular season mix (thebatx 50%%, fangraphsdc 25%%, atc 25%%, plus steamer for qq/tt only).",
     )
 
     return parser.parse_args()
@@ -88,13 +88,13 @@ def main():
                 # Equal weights if not provided
                 weights = [1] * len(sources)
         elif args.winter_meetings:
-            # Winter meetings mode: steamer (75%) + fangraphsdc (25%)
-            sources = ["steamer", "fangraphsdc"]
-            weights = [75, 25]
+            # Winter meetings mode: thebatx (50%) + fangraphsdc (50%) + steamer (qq/tt only)
+            sources = ["thebatx", "fangraphsdc", "steamer"]
+            weights = [50, 50, 0]  # steamer weight is 0 (qq/tt fields only)
         else:
-            # Default nominal mode: atc (50%) + steamer (25%) + zips (25%)
-            sources = ["atc", "steamer", "zips"]
-            weights = [50, 25, 25]
+            # Default regular season mode: thebatx (50%) + fangraphsdc (25%) + atc (25%) + steamer (qq/tt only)
+            sources = ["thebatx", "fangraphsdc", "atc", "steamer"]
+            weights = [50, 25, 25, 0]  # steamer weight is 0 (qq/tt fields only)
 
         # Normalize weights to sum to 1.0
         total_weight = sum(weights)

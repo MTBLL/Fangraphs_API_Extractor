@@ -59,9 +59,10 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
                 try:
                     proj_data = player.projection
                     if proj_data is not None and hasattr(proj_data, "model_dump"):
-                        # Convert projection model to dictionary using model_dump
+                        # Convert projection model to dictionary using model_dump with aliases
+                        # This ensures exported fields match API format (e.g., "HR" not "hr")
                         serialized_player["projection"] = proj_data.model_dump(
-                            exclude_none=True
+                            by_alias=True, exclude_none=True
                         )
                 except Exception as proj_e:
                     log.error(f"Error processing projection: {proj_e}")
