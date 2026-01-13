@@ -24,6 +24,7 @@ class ProjectionSource(str, Enum):
     STEAMER = "steamer"
     ATC = "atc"
     THE_BAT = "the_bat"
+    THE_BATX = "thebatx"
     ZIPS = "zips"
     DEPTH_CHARTS = "fangraphsdc"
 
@@ -187,7 +188,7 @@ class PlayerModel(BaseModel):
                 proj_cls = PitcherSteamerProjectionModel
             elif projection_source.lower() == "atc":
                 proj_cls = PitcherATCProjectionModel
-            elif projection_source.lower() == "the_bat":
+            elif projection_source.lower() in ["the_bat", "thebat"]:
                 proj_cls = PitcherTHEBATProjectionModel
             else:
                 proj_cls = PitcherProjectionModel
@@ -197,7 +198,7 @@ class PlayerModel(BaseModel):
                 proj_cls = HitterSteamerProjectionModel
             elif projection_source.lower() == "atc":
                 proj_cls = HitterATCProjectionModel
-            elif projection_source.lower() == "the_bat":
+            elif projection_source.lower() in ["the_bat", "thebat", "thebatx"]:
                 proj_cls = HitterTHEBATProjectionModel
             else:
                 proj_cls = HitterProjectionModel

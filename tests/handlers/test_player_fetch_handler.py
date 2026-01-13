@@ -238,7 +238,7 @@ def test_fetch_all_players_multi_source_single_source(
 def test_fetch_all_players_multi_source_empty_sources(mock_core_fangraphs):
     """Test fetching players with empty sources list."""
     handler = PlayerFetchHandler(mock_core_fangraphs)
-    sources = []
+    sources: list[str] = []
     players_by_source = handler.fetch_all_players_multi_source(sources)
 
     # Should return empty dictionary

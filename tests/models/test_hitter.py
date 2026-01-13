@@ -26,15 +26,15 @@ def hitter_steamer_data():
 
 def test_hitter_basic_parsing(hitter_steamer_data):
     """Test the basic parsing of hitter data from a single projection source."""
-    # Parse the player data
-    player = PlayerModel.parse_player(hitter_steamer_data, projection_source="steamer")
+    # Parse the player data (select first player from fixture list)
+    player = PlayerModel.parse_player(hitter_steamer_data[0], projection_source="steamer")
 
     # Test basic player identification
     assert isinstance(player, HitterModel)
-    assert player.name == "Corbin Carroll"
-    assert player.team == "ARI"
-    assert player.playerid == "25878"
-    assert player.xmlbam_id == 682998
+    assert player.name == "Aaron Judge"
+    assert player.team == "NYY"
+    assert player.playerid == "15640"
+    assert player.xmlbam_id == 592450
     assert "stats.json" in player.stats_api
 
     # Test that we have the projection
@@ -42,18 +42,18 @@ def test_hitter_basic_parsing(hitter_steamer_data):
 
     # Test some basic projection data
     proj = player.projection
-    assert proj.hr == 25  # Integer conversion from 25.3512
-    assert proj.h == 151  # Integer conversion from 151.182
-    assert proj.pa == 657.643
-    assert proj.avg == 0.264213
-    assert pytest.approx(proj.war) == 4.69297
-    assert proj.wrc_plus == 128.79
+    assert proj.hr == 43  # Integer conversion from 42.7926
+    assert proj.h == 146  # Integer conversion from 145.548
+    assert proj.pa == 634.656
+    assert proj.avg == 0.285498
+    assert pytest.approx(proj.war) == 6.83793
+    assert proj.wrc_plus == 171.745
 
     # Test some derived stats
-    assert proj.obp == 0.351206
-    assert proj.k_percent == 0.18463
-    assert proj.bb_percent == 0.105
+    assert proj.obp == 0.417443
+    assert proj.k_percent == 0.245
+    assert proj.bb_percent == 0.177
 
     # Check that percentiles were captured
-    assert proj.q50 == 0.357
-    assert proj.tt_q50 == 0.357
+    assert proj.q50 == 0.415
+    assert proj.tt_q50 == 0.416

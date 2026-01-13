@@ -80,8 +80,8 @@ def test_serialize_players_with_projection(sample_hitter):
     result = serialize_players([sample_hitter])
 
     assert "projection" in result[0]
-    # Check that projection data was serialized (field name is lowercase 'hr')
-    assert result[0]["projection"]["hr"] == 30
+    # Check that projection data was serialized with aliases (field name is uppercase 'HR')
+    assert result[0]["projection"]["HR"] == 30
 
 
 def test_save_extraction_results_from_fixtures(single_pitcher, single_hitter):
