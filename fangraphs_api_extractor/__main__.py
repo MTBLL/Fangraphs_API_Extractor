@@ -1,19 +1,28 @@
 """
 CLI entry point for the Fangraphs API Extractor package.
 
-This module provides command-line interface functionality for extracting
-player data from the Fangraphs Baseball API.
+Each run pulls three independent projection sets per player:
+  - projections: canonical pre-season full-year mix
+  - updates:     in-season-refit full-year mix (uzips + steameru)
+  - ros:         rest-of-season mix
+
+Pre-draft, the `updates` and `ros` fetches return empty and those slots
+serialize as {}. There is no separate pre-draft "mode" — the same defaults
+work year-round because empty data is handled gracefully.
 """
 
 import argparse
 import sys
+from typing import Dict, List
 
 from fangraphs_api_extractor.runners import PlayerRunner
 from fangraphs_api_extractor.utils.constants import (
-    DEFAULT_PREDRAFT_SOURCES,
-    DEFAULT_PREDRAFT_WEIGHTS,
+    DEFAULT_PROJECTIONS_SOURCES,
+    DEFAULT_PROJECTIONS_WEIGHTS,
     DEFAULT_ROS_SOURCES,
     DEFAULT_ROS_WEIGHTS,
+    DEFAULT_UPDATES_SOURCES,
+    DEFAULT_UPDATES_WEIGHTS,
 )
 
 
@@ -54,99 +63,106 @@ def parse_args():
         "-s",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'rthebatx,rfangraphsdc,ratcdc,steamerr'). Overrides --predraft.",
+        help="Comma-separated list of projection sources for the `projections` slot only "
+        "(e.g., 'thebatx,fangraphsdc,atc,steamer'). Does not affect the `updates` or `ros` "
+        "slots — those continue to use their defaults. For per-slot overrides on updates/ros, "
+        "use the Python API.",
     )
     parser.add_argument(
         "--pitcher-sources",
         "-p",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'roopsydc,rfangraphsdc,ratcdc,steamerr'). Overrides --predraft.",
+        help="Comma-separated list of pitcher projection sources for the `projections` slot only. "
+        "See --batter-sources notes.",
     )
     parser.add_argument(
         "--weights",
         "-w",
         type=str,
         default=None,
-        help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
-    )
-    parser.add_argument(
-        "--predraft",
-        action="store_true",
-        help="Use the pre-draft (preseason) projection mix: thebatx/oopsy 50%%, fangraphsdc 25%%, atc 25%%, plus steamer for qq/tt only. Default (no flag) is the rest-of-season mix.",
+        help="Comma-separated weights for sources passed via --batter-sources / --pitcher-sources "
+        "(e.g., '50,25,25,0'). Must match the number of sources. If omitted, equal weights are used.",
     )
 
     return parser.parse_args()
 
 
+def _build_custom_projections_slot(
+    args: argparse.Namespace,
+) -> tuple[Dict[str, List[str]], Dict[str, Dict[str, float]]]:
+    """Build a custom `projections` slot from CLI overrides."""
+    if not args.batter_sources or not args.pitcher_sources:
+        print(
+            "Error: --batter-sources and --pitcher-sources must both be provided "
+            "when overriding the `projections` slot via the CLI."
+        )
+        sys.exit(1)
+
+    batters = [s.strip() for s in args.batter_sources.split(",")]
+    pitchers = [s.strip() for s in args.pitcher_sources.split(",")]
+
+    if len(batters) != len(pitchers):
+        print(
+            f"Error: --batter-sources has {len(batters)} entries but "
+            f"--pitcher-sources has {len(pitchers)}. They must match because "
+            "--weights is a single list applied positionally to both."
+        )
+        sys.exit(1)
+
+    if args.weights:
+        raw_weights = [float(w.strip()) for w in args.weights.split(",")]
+        if len(raw_weights) != len(batters):
+            print(
+                f"Error: --weights has {len(raw_weights)} entries; must match "
+                f"the {len(batters)} sources."
+            )
+            sys.exit(1)
+    else:
+        raw_weights = [1.0] * len(batters)
+
+    total = sum(raw_weights)
+    if total <= 0:
+        print("Error: --weights must sum to > 0.")
+        sys.exit(1)
+
+    sources = {"batters": batters, "pitchers": pitchers}
+    weights = {
+        "batters": {s: w / total for s, w in zip(batters, raw_weights)},
+        "pitchers": {s: w / total for s, w in zip(pitchers, raw_weights)},
+    }
+    return sources, weights
+
+
 def main():
     """Main CLI entry point."""
     args = parse_args()
-    sources: dict = {}
-    weights: list[float] = []
     try:
-        # Determine sources and weights based on flags
-        if args.batter_sources:
-            # Custom sources provided - use these regardless of --predraft flag
-            sources["batters"] = [s.strip() for s in args.batter_sources.split(",")]
-
-            # Parse weights
-            if args.weights:
-                weights = [float(w.strip()) for w in args.weights.split(",")]
-                if len(weights) != len(sources.get("batters", [])):
-                    print(
-                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources.get('batters', []))})"
-                    )
-                    sys.exit(1)
-            else:
-                # Equal weights if not provided
-                weights = [1.0] * len(sources.get("batters", []))
-        if args.pitcher_sources:
-            sources["pitchers"] = [s.strip() for s in args.pitcher_sources.split(",")]
-
-            if args.weights:
-                weights = [float(w.strip()) for w in args.weights.split(",")]
-                if len(weights) != len(sources.get("pitchers", [])):
-                    print(
-                        f"Error: Number of weights ({len(weights)}) must match number of sources ({len(sources.get('pitchers', []))})"
-                    )
-                    sys.exit(1)
-            else:
-                # Equal weights if not provided
-                weights = [1.0] * len(sources.get("pitchers", []))
-        elif args.predraft:
-            sources = DEFAULT_PREDRAFT_SOURCES
-            normalized_weights = DEFAULT_PREDRAFT_WEIGHTS
+        if args.batter_sources or args.pitcher_sources:
+            proj_sources, proj_weights = _build_custom_projections_slot(args)
         else:
-            # Daily in-season default: rest-of-season projections
-            sources = DEFAULT_ROS_SOURCES
-            normalized_weights = DEFAULT_ROS_WEIGHTS
+            proj_sources = DEFAULT_PROJECTIONS_SOURCES
+            proj_weights = DEFAULT_PROJECTIONS_WEIGHTS
 
-        # Normalize weights for custom sources; default mixes are pre-normalized
-        if weights:
-            total_weight = sum(weights)
-            assert "batters" in sources.keys()
-            normalized_weights = {
-                "batters": {
-                    source: weight / total_weight
-                    for source, weight in zip(sources["batters"], weights)
-                },
-                "pitchers": {
-                    source: weight / total_weight
-                    for source, weight in zip(sources["pitchers"], weights)
-                },
-            }
+        sources = {
+            "projections": proj_sources,
+            "projs_updated": DEFAULT_UPDATES_SOURCES,
+            "ros": DEFAULT_ROS_SOURCES,
+        }
+        weights = {
+            "projections": proj_weights,
+            "projs_updated": DEFAULT_UPDATES_WEIGHTS,
+            "ros": DEFAULT_ROS_WEIGHTS,
+        }
 
-        # Initialize the extractor
         extractor = PlayerRunner(
             year=args.year,
             threads=args.threads,
             batch_size=args.batch_size,
             sources=sources,
-            weights=normalized_weights,
+            weights=weights,
         )
 
-        # Run the extraction
         players = extractor.run(
             sample_size=args.sample_size,
             output_dir=args.output_dir,

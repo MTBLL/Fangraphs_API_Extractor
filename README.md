@@ -11,7 +11,7 @@ A Python package for extracting and parsing baseball player data from Fangraphs 
 - 📊 Parse JSON responses into strongly-typed Pydantic models
 - ⚾ Support for both hitters and pitchers with position-specific stats
 - 🔄 Handle multiple projection sources for the same player
-- 🎯 Store a single weighted projection per player (`player.projection`)
+- 🎯 Three weighted projection blobs per player: `player.projections` (pre-season full-year), `player.projs_updated` (in-season refit full-year), `player.ros` (rest-of-season)
 - 🏷️ Automatic URL slug generation from player names (handles accents/special characters)
 - 🌐 Built-in stats API endpoint generation
 - ✅ 93% test coverage with 97 comprehensive tests
@@ -38,17 +38,52 @@ runner = PlayerRunner(year=2026)
 # Extract all players and save to file
 players = runner.run(output_dir="./data")
 
-# Access player information
+# Each player carries three independent projection blobs:
+#   - .projections: canonical pre-season full-year projection (also the only
+#                   slot with qq/tt percentile fields)
+#   - .projs_updated:     full-year projection refit with in-season data
+#   - .ros:         rest-of-season projection
 for player in players[:5]:
     print(f"{player.name} ({player.team}) - {player.slug}")
-    
-    # Access projection
-    proj = player.projection
-    if proj and hasattr(proj, "hr"):  # Hitter
-        print(f"  Projected: {proj.hr} HR, {proj.avg:.3f} AVG")
-    elif proj and hasattr(proj, "era"):  # Pitcher
-        print(f"  Projected: {proj.wins} W, {proj.era:.2f} ERA")
+    for slot_name in ("projections", "projs_updated", "ros"):
+        proj = getattr(player, slot_name)
+        if proj and hasattr(proj, "war"):
+            print(f"  {slot_name}: WAR={proj.war}")
 ```
+
+## Output Schema
+
+Each player record in the saved JSON has the shape:
+
+```json
+{
+  "name": "Aaron Judge",
+  "ascii_name": "aaron judge",
+  "team": "NYY",
+  "playerid": "15640",
+  "xmlbam_id": 592450,
+  "slug": "aaron-judge",
+  "stats_api": "/players/aaron-judge/15640/stats.json?position=OF",
+  "projections": { "HR": 39, "AVG": 0.291, "WAR": 7.495, "q10": 0.235, ..., "tt_q90": 8.91 },
+  "projs_updated":     { "HR": 41, "AVG": 0.294, "WAR": 7.965, ... },
+  "ros":         { "HR": 28, "AVG": 0.288, "WAR": 6.251, ... }
+}
+```
+
+All three slots — `projections`, `projs_updated`, and `ros` — are always present as
+objects. When a slot has no data (e.g., pre-draft, when Fangraphs hasn't yet
+published the `projs_updated` or `ros` endpoints), the slot serializes as an **empty
+object** `{}` — not `null` and not omitted — so downstream consumers can rely
+on the shape.
+
+**Percentile fields:** Only `projections` carries `q10`–`q90` and `tt_q10`–
+`tt_q90`. Empirically only the pre-season `steamer` endpoint emits these
+fields, so the steamer-at-weight-0 trick (where Steamer's weight is 0 for all
+other fields but full weight for qq/tt) is what makes the `projections` slot
+the canonical place for percentiles.
+
+All float values are rounded to **3 decimal places** using half-away-from-zero
+rounding (so `0.0005 → 0.001`).
 
 ## Usage
 
@@ -60,10 +95,9 @@ from fangraphs_api_extractor.runners import PlayerRunner
 # Extract with sample size for testing
 runner = PlayerRunner(year=2026)
 players = runner.run(
-    sample_size=50,  # Limit to 50 players for quick testing
-    output_dir="./output"  # Saves to fangraph_pitchers_<year>_<timestamp>.json and fangraph_batters_<year>_<timestamp>.json
+    sample_size=50,
+    output_dir="./output",
 )
-
 print(f"Extracted {len(players)} players")
 ```
 
@@ -73,65 +107,31 @@ print(f"Extracted {len(players)} players")
 from fangraphs_api_extractor.handlers import PlayerFetchHandler
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 
-# Setup API client
 fangraphs = CoreFangraphs(year=2026)
 handler = PlayerFetchHandler(fangraphs)
 
-# Fetch hitters
-hitters = handler.fetch_hitters()
+# Fetch hitters from a single source (returns PlayerModel instances with
+# the source-specific projection attached to .projections)
+hitters = handler.fetch_hitters(projection_source="uzips")
 
-# Access player properties
 player = hitters[0]
 print(f"Name: {player.name}")
 print(f"Team: {player.team}")
-print(f"URL Slug: {player.slug}")  # e.g., "aaron-judge"
-print(f"Stats API: {player.stats_api}")  # Ready-to-use endpoint
-
-# Access projection
-proj = player.projection
-if proj:
-    print(f"HR: {proj.hr}, AVG: {proj.avg}, WAR: {proj.war}")
-```
-
-### Multiple Projection Systems
-
-```python
-from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
-from fangraphs_api_extractor.managers import PlayersManager
-from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
-
-fangraphs = CoreFangraphs(year=2026)
-
-# Get Steamer projections
-steamer_data = fangraphs.get_projections_data("bat", projections_system="steamer")
-manager = PlayersManager("hitters")
-steamer_players = manager.parse_players(steamer_data, projection_source="steamer")
-
-# Get ATC projections for same players
-atc_data = fangraphs.get_projections_data("bat", projections_system="atc")
-atc_players = manager.parse_players(atc_data, projection_source="atc")
-
-# Combine sources with weighted averaging
-players_by_source = {"steamer": steamer_players, "atc": atc_players}
-weights = {"steamer": 0.75, "atc": 0.25}
-merged_players = merge_player_projections(players_by_source, weights)
-
-player = merged_players[0]
-proj = player.projection
-print(f"{player.name}:")
-print(f"  Weighted WAR: {proj.war}")
+print(f"URL Slug: {player.slug}")
+print(f"HR: {player.projections.hr}, AVG: {player.projections.avg}")
 ```
 
 ## Projection Systems
 
 ### Valid Sources
 
-All valid projection system identifiers are defined in `ProjectionSource` (see `utils/constants.py`).
-Passing any string not in this enum to the API will raise `InvalidProjectionsSystemError`.
+All valid projection system identifiers are defined in `ProjectionSource` (see
+`utils/constants.py`). Passing any string not in this enum to the API will raise
+`InvalidProjectionsSystemError`.
 
 #### Pre-season projections
 
-Full-season forecasts; available before and during the season.
+Full-season forecasts; not updated mid-season.
 
 | Identifier | System |
 |---|---|
@@ -144,9 +144,19 @@ Full-season forecasts; available before and during the season.
 | `thebatx` | THE BAT X |
 | `oopsy` | OOPSY |
 
+#### Updated projections
+
+Full-season forecasts refit with in-season data — only available during the
+season. Currently only Steamer and ZiPS publish updated variants.
+
+| Identifier | System |
+|---|---|
+| `uzips` | Updated ZiPS |
+| `steameru` | Updated Steamer |
+
 #### Rest-of-season (RoS) projections
 
-Updated mid-season; project only remaining games, not the full season.
+Project only remaining games (162 − games played); updated mid-season.
 
 | Identifier | System |
 |---|---|
@@ -159,77 +169,91 @@ Updated mid-season; project only remaining games, not the full season.
 | `rthebatx` | THE BAT X RoS |
 | `roopsydc` | OOPSY RoS |
 
-### Modes & Default Mixes
+### Default Mixes per Slot
 
-The app has two modes, both defined in `utils/constants.py`:
+Every run performs three independent fetches — one per slot. There is no
+separate "mode" flag: the same defaults work year-round because slots that
+have no data (e.g. `projs_updated` and `ros` pre-draft) gracefully serialize as `{}`.
 
-#### In-season (default)
+All three defaults live in `utils/constants.py`.
 
-`DEFAULT_ROS_SOURCES` / `DEFAULT_ROS_WEIGHTS` — used by the CLI with no flags and by
-`PlayerRunner` with no `sources`/`weights` arguments. Intended for daily runs during the
-regular season; rest-of-season projections are the only ones that change day to day.
+#### `projections` slot — `DEFAULT_PROJECTIONS_*`
 
-| Position | Sources (in order) | Weights |
-|---|---|---|
-| Batters | `rthebatx`, `rfangraphsdc`, `ratcdc`, `steamerr` | 50%, 25%, 25%, 0%* |
-| Pitchers | `roopsydc`, `rfangraphsdc`, `ratcdc`, `steamerr` | 50%, 25%, 25%, 0%* |
-
-#### Pre-draft (opt-in via `--predraft`)
-
-`DEFAULT_PREDRAFT_SOURCES` / `DEFAULT_PREDRAFT_WEIGHTS` — used before the draft / during
-the offseason. Same structure as the RoS mix, but with pre-season source equivalents.
+Canonical pre-season full-year mix. Also the **only slot that exposes qq/tt
+percentile fields** (via the steamer-at-weight-0 trick).
 
 | Position | Sources (in order) | Weights |
 |---|---|---|
 | Batters | `thebatx`, `fangraphsdc`, `atc`, `steamer` | 50%, 25%, 25%, 0%* |
 | Pitchers | `oopsy`, `fangraphsdc`, `atc`, `steamer` | 50%, 25%, 25%, 0%* |
 
-\* The `steamer` / `steamerr` source at weight 0 still contributes — it provides only the
-`qq` and `tt` percentile fields, which are not available from other systems. All other
-Steamer fields are ignored when its weight is 0.
+\* `steamer` at weight 0 still contributes the `q10`–`q90` and `tt_q10`–`tt_q90`
+percentile fields. All other Steamer fields are filtered out. Empirically only
+pre-season `steamer` emits these percentiles — neither `steamerr` nor
+`steameru` does — so this trick only benefits the `projections` slot.
+
+#### `projs_updated` slot — `DEFAULT_UPDATES_*`
+
+In-season-refit full-year mix. Equal-weight average across the two updated
+sources Fangraphs publishes. Empty pre-draft.
+
+| Position | Sources (in order) | Weights |
+|---|---|---|
+| Batters | `uzips`, `steameru` | 50%, 50% |
+| Pitchers | `uzips`, `steameru` | 50%, 50% |
+
+#### `ros` slot — `DEFAULT_ROS_*`
+
+Rest-of-season mix. Empty pre-draft.
+
+| Position | Sources (in order) | Weights |
+|---|---|---|
+| Batters | `rthebatx`, `rfangraphsdc`, `ratcdc` | 50%, 25%, 25% |
+| Pitchers | `roopsydc`, `rfangraphsdc`, `ratcdc` | 50%, 25%, 25% |
 
 ### Pitcher-specific notes
 
-- **`thebatx`** has no pitcher data. The fetch handler automatically maps it to `thebat`
-  for pitcher API calls; the source label remains `thebatx` throughout the rest of the pipeline.
-- **`rthebatx`** has no pitcher data and is automatically mapped to `rthebat` the same way.
+- **`thebatx`** has no pitcher data. The fetch handler automatically maps it to
+  `thebat` for pitcher API calls; the source label remains `thebatx` through
+  the rest of the pipeline.
+- **`rthebatx`** has no pitcher data and is automatically mapped to `rthebat`.
 - **`oopsy`** and **`roopsydc`** are valid for both hitters and pitchers.
 
 ### Running from the CLI
 
 ```bash
-# Default — rest-of-season mix (rthebatx/roopsydc 50%, rfangraphsdc 25%, ratcdc 25%, steamerr qq/tt only)
+# Default — all three slots fetched with their default mixes.
+# projections: thebatx/oopsy 50%, fangraphsdc 25%, atc 25%, steamer qq/tt only
+# updates:     uzips 50% / steameru 50%   (empty {} pre-draft)
+# ros:         rthebatx/roopsydc 50%, rfangraphsdc 25%, ratcdc 25%   (empty {} pre-draft)
 uv run python -m fangraphs_api_extractor
 
-# Pre-draft mix (thebatx/oopsy 50%, fangraphsdc 25%, atc 25%, steamer qq/tt only)
-uv run python -m fangraphs_api_extractor --predraft
-
-# Custom sources — batters and pitchers must have the same number of sources
-# because --weights is a single list applied positionally to both position groups
+# Custom projections sources — overrides ONLY the projections slot.
+# The updates and ros slots continue to use their defaults.
 uv run python -m fangraphs_api_extractor \
-  --batter-sources "rthebatx,rfangraphsdc,steamerr" \
-  --pitcher-sources "roopsydc,rfangraphsdc,steamerr" \
-  --weights "60,40,0"
-# → batters:  rthebatx=60%, rfangraphsdc=40%, steamerr=0% (qq/tt only)
-# → pitchers: roopsydc=60%, rfangraphsdc=40%, steamerr=0% (qq/tt only)
+  --batter-sources "thebatx,fangraphsdc,steamer" \
+  --pitcher-sources "oopsy,fangraphsdc,steamer" \
+  --weights "75,25,0"
 
-# Omitting --weights uses equal weights across all sources
-uv run python -m fangraphs_api_extractor \
-  --batter-sources "steamer,atc,zips" \
-  --pitcher-sources "steamer,atc,zips"
-# → each source gets 33.3%
-
-# Other common flags
+# Common flags
 uv run python -m fangraphs_api_extractor \
   --year 2026 \
   --output-dir ./data \
-  --sample-size 50       # limit for quick testing
+  --sample-size 50
 ```
 
-> **CLI weight constraint:** `--weights` is a single comma-separated list that is zipped
-> positionally against both `--batter-sources` and `--pitcher-sources`. This means:
-> - Both position groups must have the **same number of sources**
-> - Both position groups receive the **same weight ratios** (applied to different source names)
+> **There is no separate pre-draft flag.** The same default invocation works
+> year-round — pre-draft, the `updates` and `ros` fetches return empty and
+> those slots serialize as `{}`. During the season they're populated.
+>
+> **CLI override scope:** `--batter-sources`, `--pitcher-sources`, and `--weights`
+> override **only the `projections` slot**. For per-slot customization on
+> `updates` or `ros`, use the Python API and pass a nested
+> `sources={"projections": {...}, "updates": {...}, "ros": {...}}` dict.
+>
+> `--weights` is a single comma-separated list zipped positionally against both
+> `--batter-sources` and `--pitcher-sources`, so both position groups must have
+> the same number of sources and receive the same weight ratios.
 
 ## Project Structure
 

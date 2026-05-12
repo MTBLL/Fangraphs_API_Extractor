@@ -17,18 +17,23 @@ USER_AGENT_HEADER = {
 class ProjectionSource(str, Enum):
     """Valid Fangraphs projection system identifiers.
 
-    Pre-season systems produce full-season forecasts and are available before/during the season.
-    Rest-of-season (RoS) systems are updated mid-season and project only remaining games.
+    Three categories of full-season-or-RoS data:
+      - Pre-season: full-season forecasts; available before and during the season,
+        but the underlying numbers don't change mid-season.
+      - Projections updated: full-season forecasts refit with in-season data; only available
+        once the season is underway. Currently only Steamer and ZiPS publish these.
+      - Rest-of-season (RoS): project only remaining games (162 − games played);
+        updated mid-season.
 
     Pitcher notes:
       - thebatx has no pitcher data; the fetch handler automatically maps it to thebat.
       - rthebatx has no pitcher data; the fetch handler automatically maps it to rthebat.
-      - oopsy and roopsydc are valid for both hitters and pitchers.
+      - oopsy / roopsydc are valid for both hitters and pitchers.
 
     Add new sources here — PROJECTION_SYSTEMS is derived from this enum automatically.
     """
 
-    # Pre-season projections
+    # Pre-season projections (full-season; not updated mid-season)
     STEAMER = "steamer"
     ZIPS = "zips"
     ZIPS_DC = "zipsdc"
@@ -38,7 +43,11 @@ class ProjectionSource(str, Enum):
     THE_BATX = "thebatx"
     OOPSY = "oopsy"
 
-    # Rest-of-season projections
+    # Updated projections (full-season; refit with in-season data)
+    UZIPS = "uzips"
+    STEAMER_U = "steameru"
+
+    # Rest-of-season projections (remaining games only)
     STEAMER_R = "steamerr"
     RZIPS = "rzips"
     RZIPS_DC = "rzipsdc"
@@ -60,6 +69,11 @@ PRESEASON_PROJECTION_SYSTEMS = [
     ProjectionSource.OOPSY.value,
 ]
 
+UPDATED_PROJECTION_SYSTEMS = [
+    ProjectionSource.UZIPS.value,
+    ProjectionSource.STEAMER_U.value,
+]
+
 ROS_PROJECTION_SYSTEMS = [
     ProjectionSource.STEAMER_R.value,
     ProjectionSource.RZIPS.value,
@@ -77,49 +91,26 @@ PROJECTION_SYSTEMS = [s.value for s in ProjectionSource]
 # ---------------------------------------------------------------------------
 # Default projection mixes
 #
-# The app has two modes:
-#   - In-season (default): DEFAULT_ROS_* — used for daily runs during the regular
-#     season, the only time the underlying projections change day to day.
-#   - Pre-draft (opt-in via --predraft): DEFAULT_PREDRAFT_* — used before the
-#     draft / during the offseason, mirrors the RoS mix structure with
-#     pre-season source equivalents.
+# Each player carries THREE independent projection blobs:
+#   - projections: pre-season full-year forecast (the canonical mix — also the
+#                  only one that exposes qq/tt percentile fields, via steamer
+#                  at weight 0).
+#   - updates:     full-year forecast refit with in-season data (only published
+#                  during the season — empty pre-draft).
+#   - ros:         rest-of-season forecast (only published during the season —
+#                  empty pre-draft).
 #
-# steamer/steamerr weight is always 0.0 in these mixes — it contributes only
-# its qq/tt percentile fields (handled specially in weighted_average.py).
-# Pitchers use oopsy/roopsydc instead of thebatx/rthebatx (no batx pitcher data).
+# All three fetches always run. Pre-draft mode naturally returns empty `updates`
+# and `ros` because Fangraphs hasn't published those endpoints yet; they
+# serialize as {} rather than null so downstream consumers see a stable shape.
+#
+# Pitchers use oopsy / roopsydc instead of thebatx / rthebatx (no batx pitcher
+# data). Empirically only pre-season `steamer` emits qq/tt percentile fields
+# — neither steameru nor steamerr emits them — so the steamer-at-weight-0
+# trick only applies to DEFAULT_PROJECTIONS_*.
 # ---------------------------------------------------------------------------
 
-DEFAULT_ROS_SOURCES = {
-    "batters": [
-        ProjectionSource.RTHE_BATX.value,
-        ProjectionSource.RFANGRAPHS_DC.value,
-        ProjectionSource.RATC_DC.value,
-        ProjectionSource.STEAMER_R.value,
-    ],
-    "pitchers": [
-        ProjectionSource.ROOPSY_DC.value,
-        ProjectionSource.RFANGRAPHS_DC.value,
-        ProjectionSource.RATC_DC.value,
-        ProjectionSource.STEAMER_R.value,
-    ],
-}
-
-DEFAULT_ROS_WEIGHTS = {
-    "batters": {
-        ProjectionSource.RTHE_BATX.value: 0.50,
-        ProjectionSource.RFANGRAPHS_DC.value: 0.25,
-        ProjectionSource.RATC_DC.value: 0.25,
-        ProjectionSource.STEAMER_R.value: 0.00,
-    },
-    "pitchers": {
-        ProjectionSource.ROOPSY_DC.value: 0.50,
-        ProjectionSource.RFANGRAPHS_DC.value: 0.25,
-        ProjectionSource.RATC_DC.value: 0.25,
-        ProjectionSource.STEAMER_R.value: 0.00,
-    },
-}
-
-DEFAULT_PREDRAFT_SOURCES = {
+DEFAULT_PROJECTIONS_SOURCES = {
     "batters": [
         ProjectionSource.THE_BATX.value,
         ProjectionSource.DEPTH_CHARTS.value,
@@ -134,7 +125,7 @@ DEFAULT_PREDRAFT_SOURCES = {
     ],
 }
 
-DEFAULT_PREDRAFT_WEIGHTS = {
+DEFAULT_PROJECTIONS_WEIGHTS = {
     "batters": {
         ProjectionSource.THE_BATX.value: 0.50,
         ProjectionSource.DEPTH_CHARTS.value: 0.25,
@@ -146,6 +137,57 @@ DEFAULT_PREDRAFT_WEIGHTS = {
         ProjectionSource.DEPTH_CHARTS.value: 0.25,
         ProjectionSource.ATC.value: 0.25,
         ProjectionSource.STEAMER.value: 0.00,
+    },
+}
+
+DEFAULT_UPDATES_SOURCES = {
+    "batters": [
+        ProjectionSource.UZIPS.value,
+        ProjectionSource.STEAMER_U.value,
+    ],
+    "pitchers": [
+        ProjectionSource.UZIPS.value,
+        ProjectionSource.STEAMER_U.value,
+    ],
+}
+
+DEFAULT_UPDATES_WEIGHTS = {
+    # Equal-weight average across the two updated sources Fangraphs publishes.
+    # Neither emits qq/tt percentile fields, so there's no point holding one at
+    # weight 0 like the pre-season `projections` mix does.
+    "batters": {
+        ProjectionSource.UZIPS.value: 0.50,
+        ProjectionSource.STEAMER_U.value: 0.50,
+    },
+    "pitchers": {
+        ProjectionSource.UZIPS.value: 0.50,
+        ProjectionSource.STEAMER_U.value: 0.50,
+    },
+}
+
+DEFAULT_ROS_SOURCES = {
+    "batters": [
+        ProjectionSource.RTHE_BATX.value,
+        ProjectionSource.RFANGRAPHS_DC.value,
+        ProjectionSource.RATC_DC.value,
+    ],
+    "pitchers": [
+        ProjectionSource.ROOPSY_DC.value,
+        ProjectionSource.RFANGRAPHS_DC.value,
+        ProjectionSource.RATC_DC.value,
+    ],
+}
+
+DEFAULT_ROS_WEIGHTS = {
+    "batters": {
+        ProjectionSource.RTHE_BATX.value: 0.50,
+        ProjectionSource.RFANGRAPHS_DC.value: 0.25,
+        ProjectionSource.RATC_DC.value: 0.25,
+    },
+    "pitchers": {
+        ProjectionSource.ROOPSY_DC.value: 0.50,
+        ProjectionSource.RFANGRAPHS_DC.value: 0.25,
+        ProjectionSource.RATC_DC.value: 0.25,
     },
 }
 

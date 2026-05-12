@@ -164,6 +164,7 @@ def _calculate_weighted_average_projections(
 def merge_player_projections(
     players_by_source: Mapping[str, List[PlayerModel]],
     weights: Mapping[str, float],
+    target_slot: str = "projections",
 ) -> List[PlayerModel]:
     """
     Merge player projections from multiple sources with weighted averaging.
@@ -210,18 +211,23 @@ def merge_player_projections(
                 if source_projections is not base_player._source_projections:
                     base_player._source_projections.update(source_projections)
             else:
-                projection = getattr(player, "projection", None)
+                # parse_player attaches the parsed projection to `.projections`
+                projection = getattr(player, "projections", None)
                 if projection is not None:
                     base_player._source_projections[source_name] = projection
 
             if player is not base_player:
-                player.projection = None
+                player.projections = None
                 if hasattr(player, "_source_projections"):
                     player._source_projections.clear()
 
-    # Second pass: calculate weighted averages for each player
+    # Second pass: calculate weighted averages for each player and write the
+    # result into the target slot (`projections` for full-year, `ros` for RoS).
     for player in players_by_id.values():
         projections = player._source_projections
+        merged: Optional[
+            Union[HitterProjectionModel, PitcherProjectionModel, BaseProjectionModel]
+        ]
         if len(projections) > 1:
             averaged_proj = _calculate_weighted_average_projections(
                 projections, weights
@@ -238,13 +244,19 @@ def merge_player_projections(
                         avg_model = PitcherProjectionModel(**averaged_proj)
                     case _:
                         avg_model = BaseProjectionModel(**averaged_proj)
-                player.projection = avg_model
+                merged = avg_model
             else:
-                player.projection = next(iter(projections.values()))
+                merged = next(iter(projections.values()))
         elif projections:
-            player.projection = next(iter(projections.values()))
+            merged = next(iter(projections.values()))
         else:
-            player.projection = None
+            merged = None
+
+        setattr(player, target_slot, merged)
+        # If the merge target isn't `projections`, clear out the transient value
+        # that parse_player wrote there.
+        if target_slot != "projections":
+            player.projections = None
 
         player._source_projections.clear()
 

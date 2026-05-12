@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from fangraphs_api_extractor.utils import Logger
@@ -8,6 +9,27 @@ from fangraphs_api_extractor.utils.string_utils import normalize_string
 
 if TYPE_CHECKING:
     from fangraphs_api_extractor.models import PlayerModel
+
+
+_ROUND_QUANTUM = Decimal("0.001")
+
+
+def round_floats(obj: Any) -> Any:
+    """Recursively round float values to 3 decimal places, half-away-from-zero.
+
+    Python's built-in round() uses banker's rounding (round-half-to-even), which
+    gives 0.0005 -> 0.0. The requirement here is 0.0005 -> 0.001, so use Decimal
+    with ROUND_HALF_UP. Walks dicts and lists; leaves non-float scalars alone.
+    """
+    if isinstance(obj, float):
+        return float(
+            Decimal(repr(obj)).quantize(_ROUND_QUANTUM, rounding=ROUND_HALF_UP)
+        )
+    if isinstance(obj, dict):
+        return {k: round_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [round_floats(v) for v in obj]
+    return obj
 
 
 def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
@@ -26,15 +48,19 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
 
     player_data_list = []
 
+    def _dump(model: Any) -> Dict[str, Any]:
+        """Dump a projection model to dict, or return {} if model is missing.
+
+        Both slots always serialize as dicts (empty when no data) so downstream
+        consumers can rely on the shape — e.g. pre-draft players have `ros: {}`
+        rather than `ros: null`.
+        """
+        if model is None or not hasattr(model, "model_dump"):
+            return {}
+        return model.model_dump(by_alias=True, exclude_none=True)
+
     for i, player in enumerate(players):
         try:
-            log.debug(
-                f"Processing player {i + 1}: {getattr(player, 'name', 'unknown')}"
-            )
-            if i < 5:  # Only log detailed debug info for first 5 players
-                log.debug(f"Player type: {type(player)}")
-                log.debug(f"Has model_dump: {hasattr(player, 'model_dump')}")
-
             # Ensure we have the basic player fields
             serialized_player: Dict[str, Any] = {
                 "name": getattr(player, "name", "unknown"),
@@ -48,24 +74,19 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
                 "xmlbam_id": getattr(player, "xmlbam_id", -1),
                 "slug": getattr(player, "slug", ""),
                 "stats_api": getattr(player, "stats_api", ""),
-                "projection": {},
+                "projections": {},
+                "projs_updated": {},
+                "ros": {},
             }
 
-            # Add projection data
-            if hasattr(player, "projection"):
-                if i < 5:
-                    log.debug(f"Projection type: {type(getattr(player, 'projection'))}")
-
+            for slot in ("projections", "projs_updated", "ros"):
                 try:
-                    proj_data = player.projection
-                    if proj_data is not None and hasattr(proj_data, "model_dump"):
-                        # Convert projection model to dictionary using model_dump with aliases
-                        # This ensures exported fields match API format (e.g., "HR" not "hr")
-                        serialized_player["projection"] = proj_data.model_dump(
-                            by_alias=True, exclude_none=True
-                        )
-                except Exception as proj_e:
-                    log.error(f"Error processing projection: {proj_e}")
+                    serialized_player[slot] = _dump(getattr(player, slot, None))
+                except Exception as e:
+                    log.error(f"Error processing {slot} for player {i + 1}: {e}")
+
+            # Round all float values in the player record to 3 decimal places
+            serialized_player = round_floats(serialized_player)
 
             player_data_list.append(serialized_player)
 
