@@ -6,7 +6,11 @@
       "Bash(grep:*)",
       "Bash(python:*)",
       "Bash(uv run mypy:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(/Users/Shared/BaseballHQ/tools/_extract/Fangraphs_API_Extractor/.venv/bin/python *)",
+      "Bash(uv run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   },
   "enableAllProjectMcpServers": false
