@@ -65,10 +65,14 @@ class PlayerRunner:
             threads: Number of threads to use for player hydration (default: 4x CPU cores).
             batch_size: Number of players to process in each batch for progress tracking.
             sources: Nested dict {slot: {position: [source, ...]}} with slot in
-                {"projections", "updates", "ros"}. Omitted slots are skipped.
+                {"projections", "projs_updated", "ros"}. Omitted slots are skipped.
                 Defaults to DEFAULT_*_SOURCES for all three slots.
             weights: Nested dict {slot: {position: {source: weight}}}, mirroring `sources`.
-                Defaults to DEFAULT_*_WEIGHTS for all three slots.
+                When omitted, behavior depends on `sources`:
+                  - If `sources` is also omitted, falls back to DEFAULT_*_WEIGHTS.
+                  - If `sources` was provided, equal weights are derived from
+                    the caller's sources (1/n per source per position) so
+                    custom sources actually contribute to the merge.
         """
         self.year = year
         self.logger = Logger("player_extractor")
@@ -80,13 +84,45 @@ class PlayerRunner:
             "projs_updated": DEFAULT_UPDATES_SOURCES,
             "ros": DEFAULT_ROS_SOURCES,
         }
-        self.weights: SlotWeights = weights or {
-            "projections": DEFAULT_PROJECTIONS_WEIGHTS,
-            "projs_updated": DEFAULT_UPDATES_WEIGHTS,
-            "ros": DEFAULT_ROS_WEIGHTS,
-        }
+        if weights is not None:
+            self.weights: SlotWeights = weights
+        elif sources is None:
+            # Both defaulted — use the canonical default weights, which match
+            # the canonical default sources exactly.
+            self.weights = {
+                "projections": DEFAULT_PROJECTIONS_WEIGHTS,
+                "projs_updated": DEFAULT_UPDATES_WEIGHTS,
+                "ros": DEFAULT_ROS_WEIGHTS,
+            }
+        else:
+            # Custom sources without explicit weights — derive equal weights so
+            # the caller's sources actually contribute to the merge. (Default
+            # weight dicts are keyed by the *default* source names; using them
+            # here would silently drop every custom source in the weighted
+            # average.)
+            self.weights = self._equal_weights_from_sources(self.sources)
         self.core_fangraphs = CoreFangraphs(year=year)
         self.fetch_handler = PlayerFetchHandler(self.core_fangraphs)
+
+    @staticmethod
+    def _equal_weights_from_sources(sources: SlotSources) -> SlotWeights:
+        """Derive equal weights (1/n per source) from a nested sources dict.
+
+        Used when a caller provides custom `sources` but omits `weights` — we
+        can't fall back to DEFAULT_*_WEIGHTS because those are keyed by default
+        source names and would silently drop the caller's custom sources in
+        the weighted average.
+        """
+        weights: SlotWeights = {}
+        for slot, position_dict in sources.items():
+            weights[slot] = {}
+            for position, src_list in position_dict.items():
+                if not src_list:
+                    weights[slot][position] = {}
+                else:
+                    w = 1.0 / len(src_list)
+                    weights[slot][position] = {s: w for s in src_list}
+        return weights
 
     def _fetch_and_merge_slot(
         self, slot: str

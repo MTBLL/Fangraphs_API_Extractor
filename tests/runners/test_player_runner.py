@@ -137,6 +137,43 @@ def test_player_runner_initialization_defaults():
     assert runner.sources["ros"]["batters"][0] == "rthebatx"
 
 
+def test_custom_sources_without_weights_derives_equal_weights():
+    """Regression: custom sources + no weights should derive equal weights.
+
+    Previous behavior: equal weights computed from supplied sources.
+    Bug introduced during the three-slot refactor: weights fell back to
+    DEFAULT_*_WEIGHTS, which are keyed by *default* source names — so any
+    custom source got `source_name not in weights` -> silently dropped from
+    the merge. This test pins the correct behavior in place.
+    """
+    custom_sources = {
+        "projections": {
+            "batters": ["custom_a", "custom_b", "custom_c"],
+            "pitchers": ["custom_a", "custom_b"],
+        },
+        # Other slots omitted entirely — the runner should still handle that.
+    }
+    runner = PlayerRunner(year=2026, sources=custom_sources)
+
+    # Every custom source must appear in the derived weights dict — otherwise
+    # the merge will skip them via `source_name not in weights`.
+    assert set(runner.weights["projections"]["batters"].keys()) == {
+        "custom_a",
+        "custom_b",
+        "custom_c",
+    }
+    assert set(runner.weights["projections"]["pitchers"].keys()) == {
+        "custom_a",
+        "custom_b",
+    }
+    # Weights are equal (1/n per source) and sum to 1.0 per position.
+    bw = runner.weights["projections"]["batters"]
+    assert all(abs(w - 1.0 / 3) < 1e-12 for w in bw.values())
+    assert abs(sum(bw.values()) - 1.0) < 1e-12
+    pw = runner.weights["projections"]["pitchers"]
+    assert all(abs(w - 0.5) < 1e-12 for w in pw.values())
+
+
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
 def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     """Test successful run execution — three fetches: projections, updates, ros."""
