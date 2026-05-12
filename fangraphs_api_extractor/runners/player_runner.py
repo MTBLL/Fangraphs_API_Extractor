@@ -11,7 +11,12 @@ from typing import Dict, List, Optional
 from fangraphs_api_extractor.handlers import PlayerFetchHandler
 from fangraphs_api_extractor.models import HitterModel, PitcherModel, PlayerModel
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
-from fangraphs_api_extractor.utils import Logger, save_extraction_results
+from fangraphs_api_extractor.utils import (
+    DEFAULT_ROS_SOURCES,
+    DEFAULT_ROS_WEIGHTS,
+    Logger,
+    save_extraction_results,
+)
 from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
 
 
@@ -40,21 +45,20 @@ class PlayerRunner:
             year: League year to fetch data for
             threads: Number of threads to use for player hydration (default: 4x CPU cores)
             batch_size: Number of players to process in each batch for progress tracking
-            sources: Dictionary mapping positions to lists of projection sources to fetch from
-                (default: {"batters": ["steamer"], "pitchers": ["steamer"]})
-            weights: Dictionary mapping positions to dictionaries mapping projection names
-                to normalized weights (default: equal weights)
+            sources: Dictionary mapping positions to lists of projection sources to fetch from.
+                Defaults to DEFAULT_ROS_SOURCES (rest-of-season mix) — see utils.constants.
+                All source strings must be values of ProjectionSource.
+            weights: Normalized weights dict, e.g. {"batters": {"rthebatx": 0.5, ...}}.
+                Defaults to DEFAULT_ROS_WEIGHTS.
+                A steamer/steamerr weight of 0.0 is valid — it contributes only qq/tt percentile fields.
         """
         self.year = year
         self.logger = Logger("player_extractor")
         self.log = self.logger.logging
         self.threads = threads
         self.batch_size = batch_size
-        self.sources = sources or {"batters": ["steamer"], "pitchers": ["steamer"]}
-        self.weights = weights or {
-            s: {p: 1.0 / len(self.sources[s]) for p in self.sources[s]}
-            for s in self.sources
-        }
+        self.sources = sources or DEFAULT_ROS_SOURCES
+        self.weights = weights or DEFAULT_ROS_WEIGHTS
         self.core_fangraphs = CoreFangraphs(year=year)
         self.fetch_handler = PlayerFetchHandler(self.core_fangraphs)
 

@@ -44,6 +44,10 @@ def _calculate_weighted_average_projections(
     if not projections:
         return {}
 
+    # Steamer-family sources contribute qq/tt percentiles even at weight 0.
+    # Both pre-season (steamer) and rest-of-season (steamerr) emit these fields.
+    steamer_family = {"steamer", "steamerr"}
+
     # Define Steamer-only fields (qq and tt percentiles)
     # Note: qq values represent wOBA percentiles for hitters, RA/9 percentiles for pitchers
     #       tt values represent true talent (stabilized) percentiles
@@ -100,8 +104,8 @@ def _calculate_weighted_average_projections(
             if source_name not in weights:
                 continue
 
-            # Special handling for Steamer source with weight 0
-            if source_name == "steamer" and weights[source_name] == 0:
+            # Special handling for Steamer-family source with weight 0
+            if source_name in steamer_family and weights[source_name] == 0:
                 # Only include Steamer for qq and tt fields
                 if not is_steamer_only_field:
                     continue
@@ -115,9 +119,9 @@ def _calculate_weighted_average_projections(
                     is_integer_field = True
 
                 values_to_average.append(float(field_value))
-                # For Steamer qq/tt fields with weight 0, use full weight
+                # For Steamer-family qq/tt fields with weight 0, use full weight
                 if (
-                    source_name == "steamer"
+                    source_name in steamer_family
                     and weights[source_name] == 0
                     and is_steamer_only_field
                 ):
@@ -127,7 +131,7 @@ def _calculate_weighted_average_projections(
             else:
                 # Only count missing weight for non-Steamer sources or non-qq/tt fields
                 if not (
-                    source_name == "steamer"
+                    source_name in steamer_family
                     and weights[source_name] == 0
                     and not is_steamer_only_field
                 ):

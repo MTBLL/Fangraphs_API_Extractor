@@ -48,7 +48,7 @@ def test_parse_player_pitcher_the_bat():
         "IP": 150.0,
     }
 
-    player = PlayerModel.parse_player(data, projection_source="the_bat")
+    player = PlayerModel.parse_player(data, projection_source="thebat")
 
     assert isinstance(player, PitcherModel)
     assert isinstance(player.projection, PitcherTHEBATProjectionModel)
@@ -106,7 +106,7 @@ def test_parse_player_hitter_the_bat():
         "RBI": 100,
     }
 
-    player = PlayerModel.parse_player(data, projection_source="the_bat")
+    player = PlayerModel.parse_player(data, projection_source="thebat")
 
     assert isinstance(player, HitterModel)
     assert isinstance(player.projection, HitterTHEBATProjectionModel)

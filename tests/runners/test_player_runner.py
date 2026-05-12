@@ -129,9 +129,12 @@ def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
     assert players is not None
     assert len(players) == 8  # 5 hitters + 3 pitchers
 
-    # Verify handler method was called with correct sources
+    # Verify handler method was called with the RoS default sources
     mock_handler.fetch_all_players_multi_source.assert_called_once_with(
-        {"batters": ["steamer"], "pitchers": ["steamer"]}
+        {
+            "batters": ["rthebatx", "rfangraphsdc", "ratcdc", "steamerr"],
+            "pitchers": ["roopsydc", "rfangraphsdc", "ratcdc", "steamerr"],
+        }
     )
 
 

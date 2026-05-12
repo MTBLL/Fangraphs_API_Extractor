@@ -32,8 +32,8 @@ pip install git+https://github.com/MTBLL/Fangraphs_API_Extractor.git
 ```python
 from fangraphs_api_extractor.runners import PlayerRunner
 
-# Initialize the runner for 2025 season
-runner = PlayerRunner(year=2025)
+# Initialize the runner for 2026 season
+runner = PlayerRunner(year=2026)
 
 # Extract all players and save to file
 players = runner.run(output_dir="./data")
@@ -58,7 +58,7 @@ for player in players[:5]:
 from fangraphs_api_extractor.runners import PlayerRunner
 
 # Extract with sample size for testing
-runner = PlayerRunner(year=2025)
+runner = PlayerRunner(year=2026)
 players = runner.run(
     sample_size=50,  # Limit to 50 players for quick testing
     output_dir="./output"  # Saves to fangraph_pitchers_<year>_<timestamp>.json and fangraph_batters_<year>_<timestamp>.json
@@ -74,7 +74,7 @@ from fangraphs_api_extractor.handlers import PlayerFetchHandler
 from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 
 # Setup API client
-fangraphs = CoreFangraphs(year=2025)
+fangraphs = CoreFangraphs(year=2026)
 handler = PlayerFetchHandler(fangraphs)
 
 # Fetch hitters
@@ -100,7 +100,7 @@ from fangraphs_api_extractor.requests.core_fangraphs import CoreFangraphs
 from fangraphs_api_extractor.managers import PlayersManager
 from fangraphs_api_extractor.utils.weighted_average import merge_player_projections
 
-fangraphs = CoreFangraphs(year=2025)
+fangraphs = CoreFangraphs(year=2026)
 
 # Get Steamer projections
 steamer_data = fangraphs.get_projections_data("bat", projections_system="steamer")
@@ -121,6 +121,115 @@ proj = player.projection
 print(f"{player.name}:")
 print(f"  Weighted WAR: {proj.war}")
 ```
+
+## Projection Systems
+
+### Valid Sources
+
+All valid projection system identifiers are defined in `ProjectionSource` (see `utils/constants.py`).
+Passing any string not in this enum to the API will raise `InvalidProjectionsSystemError`.
+
+#### Pre-season projections
+
+Full-season forecasts; available before and during the season.
+
+| Identifier | System |
+|---|---|
+| `steamer` | Steamer |
+| `zips` | ZiPS |
+| `zipsdc` | ZiPS + Depth Charts |
+| `atc` | ATC |
+| `fangraphsdc` | Fangraphs Depth Charts |
+| `thebat` | THE BAT |
+| `thebatx` | THE BAT X |
+| `oopsy` | OOPSY |
+
+#### Rest-of-season (RoS) projections
+
+Updated mid-season; project only remaining games, not the full season.
+
+| Identifier | System |
+|---|---|
+| `steamerr` | Steamer RoS |
+| `rzips` | ZiPS RoS |
+| `rzipsdc` | ZiPS + Depth Charts RoS |
+| `rfangraphsdc` | Fangraphs Depth Charts RoS |
+| `ratcdc` | ATC RoS |
+| `rthebat` | THE BAT RoS |
+| `rthebatx` | THE BAT X RoS |
+| `roopsydc` | OOPSY RoS |
+
+### Modes & Default Mixes
+
+The app has two modes, both defined in `utils/constants.py`:
+
+#### In-season (default)
+
+`DEFAULT_ROS_SOURCES` / `DEFAULT_ROS_WEIGHTS` — used by the CLI with no flags and by
+`PlayerRunner` with no `sources`/`weights` arguments. Intended for daily runs during the
+regular season; rest-of-season projections are the only ones that change day to day.
+
+| Position | Sources (in order) | Weights |
+|---|---|---|
+| Batters | `rthebatx`, `rfangraphsdc`, `ratcdc`, `steamerr` | 50%, 25%, 25%, 0%* |
+| Pitchers | `roopsydc`, `rfangraphsdc`, `ratcdc`, `steamerr` | 50%, 25%, 25%, 0%* |
+
+#### Pre-draft (opt-in via `--predraft`)
+
+`DEFAULT_PREDRAFT_SOURCES` / `DEFAULT_PREDRAFT_WEIGHTS` — used before the draft / during
+the offseason. Same structure as the RoS mix, but with pre-season source equivalents.
+
+| Position | Sources (in order) | Weights |
+|---|---|---|
+| Batters | `thebatx`, `fangraphsdc`, `atc`, `steamer` | 50%, 25%, 25%, 0%* |
+| Pitchers | `oopsy`, `fangraphsdc`, `atc`, `steamer` | 50%, 25%, 25%, 0%* |
+
+\* The `steamer` / `steamerr` source at weight 0 still contributes — it provides only the
+`qq` and `tt` percentile fields, which are not available from other systems. All other
+Steamer fields are ignored when its weight is 0.
+
+### Pitcher-specific notes
+
+- **`thebatx`** has no pitcher data. The fetch handler automatically maps it to `thebat`
+  for pitcher API calls; the source label remains `thebatx` throughout the rest of the pipeline.
+- **`rthebatx`** has no pitcher data and is automatically mapped to `rthebat` the same way.
+- **`oopsy`** and **`roopsydc`** are valid for both hitters and pitchers.
+
+### Running from the CLI
+
+```bash
+# Default — rest-of-season mix (rthebatx/roopsydc 50%, rfangraphsdc 25%, ratcdc 25%, steamerr qq/tt only)
+uv run python -m fangraphs_api_extractor
+
+# Pre-draft mix (thebatx/oopsy 50%, fangraphsdc 25%, atc 25%, steamer qq/tt only)
+uv run python -m fangraphs_api_extractor --predraft
+
+# Custom sources — batters and pitchers must have the same number of sources
+# because --weights is a single list applied positionally to both position groups
+uv run python -m fangraphs_api_extractor \
+  --batter-sources "rthebatx,rfangraphsdc,steamerr" \
+  --pitcher-sources "roopsydc,rfangraphsdc,steamerr" \
+  --weights "60,40,0"
+# → batters:  rthebatx=60%, rfangraphsdc=40%, steamerr=0% (qq/tt only)
+# → pitchers: roopsydc=60%, rfangraphsdc=40%, steamerr=0% (qq/tt only)
+
+# Omitting --weights uses equal weights across all sources
+uv run python -m fangraphs_api_extractor \
+  --batter-sources "steamer,atc,zips" \
+  --pitcher-sources "steamer,atc,zips"
+# → each source gets 33.3%
+
+# Other common flags
+uv run python -m fangraphs_api_extractor \
+  --year 2026 \
+  --output-dir ./data \
+  --sample-size 50       # limit for quick testing
+```
+
+> **CLI weight constraint:** `--weights` is a single comma-separated list that is zipped
+> positionally against both `--batter-sources` and `--pitcher-sources`. This means:
+> - Both position groups must have the **same number of sources**
+> - Both position groups receive the **same weight ratios** (applied to different source names)
 
 ## Project Structure
 

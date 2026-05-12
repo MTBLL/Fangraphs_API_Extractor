@@ -9,6 +9,12 @@ import argparse
 import sys
 
 from fangraphs_api_extractor.runners import PlayerRunner
+from fangraphs_api_extractor.utils.constants import (
+    DEFAULT_PREDRAFT_SOURCES,
+    DEFAULT_PREDRAFT_WEIGHTS,
+    DEFAULT_ROS_SOURCES,
+    DEFAULT_ROS_WEIGHTS,
+)
 
 
 def parse_args():
@@ -16,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Access Fangraphs Baseball API")
 
     parser.add_argument(
-        "--year", type=int, default=2025, help="League year (default: 2025)"
+        "--year", type=int, default=2026, help="League year (default: 2026)"
     )
     parser.add_argument(
         "--threads",
@@ -48,14 +54,14 @@ def parse_args():
         "-s",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc,thebatx,oopsy'). Overrides --winter_meetings.",
+        help="Comma-separated list of projection sources (e.g., 'rthebatx,rfangraphsdc,ratcdc,steamerr'). Overrides --predraft.",
     )
     parser.add_argument(
         "--pitcher-sources",
         "-p",
         type=str,
         default=None,
-        help="Comma-separated list of projection sources (e.g., 'steamer,fangraphsdc,zips,atc,thebat,oopsy'). Overrides --winter_meetings.",
+        help="Comma-separated list of projection sources (e.g., 'roopsydc,rfangraphsdc,ratcdc,steamerr'). Overrides --predraft.",
     )
     parser.add_argument(
         "--weights",
@@ -65,9 +71,9 @@ def parse_args():
         help="Comma-separated integer weights for sources (e.g., '75,25' for 75%% and 25%%). Must match number of sources. If not provided, equal weights used.",
     )
     parser.add_argument(
-        "--winter-meetings",
+        "--predraft",
         action="store_true",
-        help="Use winter meetings projection mix (thebatx 50%%, fangraphsdc 50%%, plus steamer for qq/tt only). Default is regular season mix (thebatx 50%%, fangraphsdc 25%%, atc 25%%, plus steamer for qq/tt only).",
+        help="Use the pre-draft (preseason) projection mix: thebatx/oopsy 50%%, fangraphsdc 25%%, atc 25%%, plus steamer for qq/tt only. Default (no flag) is the rest-of-season mix.",
     )
 
     return parser.parse_args()
@@ -81,7 +87,7 @@ def main():
     try:
         # Determine sources and weights based on flags
         if args.batter_sources:
-            # Custom sources provided - use these regardless of --winter_meetings flag
+            # Custom sources provided - use these regardless of --predraft flag
             sources["batters"] = [s.strip() for s in args.batter_sources.split(",")]
 
             # Parse weights
@@ -108,34 +114,28 @@ def main():
             else:
                 # Equal weights if not provided
                 weights = [1.0] * len(sources.get("pitchers", []))
-        elif args.winter_meetings:
-            # Winter meetings mode: thebatx (50%) + fangraphsdc (50%) + steamer (qq/tt only)
-            sources = {
-                "batters": ["thebatx", "fangraphsdc", "steamer"],
-                "pitchers": ["oopsy", "fangraphsdc", "steamer"],
-            }
-            weights = [50.0, 50.0, 0.0]  # steamer weight is 0 (qq/tt fields only)
+        elif args.predraft:
+            sources = DEFAULT_PREDRAFT_SOURCES
+            normalized_weights = DEFAULT_PREDRAFT_WEIGHTS
         else:
-            # Default regular season mode: thebatx (50%) + fangraphsdc (25%) + atc (25%) + steamer (qq/tt only)
-            sources = {
-                "batters": ["thebatx", "fangraphsdc", "atc", "steamer"],
-                "pitchers": ["oopsy", "fangraphsdc", "atc", "steamer"],
-            }
-            weights = [50.0, 25.0, 25.0, 0.0]  # steamer weight is 0 (qq/tt fields only)
+            # Daily in-season default: rest-of-season projections
+            sources = DEFAULT_ROS_SOURCES
+            normalized_weights = DEFAULT_ROS_WEIGHTS
 
-        # Normalize weights to sum to 1.0
-        total_weight = sum(weights)
-        assert "batters" in sources.keys()
-        normalized_weights = {
-            "batters": {
-                source: weight / total_weight
-                for source, weight in zip(sources["batters"], weights)
-            },
-            "pitchers": {
-                source: weight / total_weight
-                for source, weight in zip(sources["pitchers"], weights)
-            },
-        }
+        # Normalize weights for custom sources; default mixes are pre-normalized
+        if weights:
+            total_weight = sum(weights)
+            assert "batters" in sources.keys()
+            normalized_weights = {
+                "batters": {
+                    source: weight / total_weight
+                    for source, weight in zip(sources["batters"], weights)
+                },
+                "pitchers": {
+                    source: weight / total_weight
+                    for source, weight in zip(sources["pitchers"], weights)
+                },
+            }
 
         # Initialize the extractor
         extractor = PlayerRunner(

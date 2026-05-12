@@ -1,9 +1,9 @@
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, ForwardRef, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from fangraphs_api_extractor.utils import normalize_string
+from fangraphs_api_extractor.utils.constants import ProjectionSource
 
 T = TypeVar("T", bound="PlayerModel")
 # Use forward references to avoid circular imports
@@ -18,15 +18,6 @@ if TYPE_CHECKING:
     PitcherSteamerProjectionModel = ForwardRef("PitcherSteamerProjectionModel")
     PitcherATCProjectionModel = ForwardRef("PitcherATCProjectionModel")
     PitcherTHEBATProjectionModel = ForwardRef("PitcherTHEBATProjectionModel")
-
-
-class ProjectionSource(str, Enum):
-    STEAMER = "steamer"
-    ATC = "atc"
-    THE_BAT = "the_bat"
-    THE_BATX = "thebatx"
-    ZIPS = "zips"
-    DEPTH_CHARTS = "fangraphsdc"
 
 
 class BaseProjectionModel(BaseModel):
@@ -182,23 +173,24 @@ class PlayerModel(BaseModel):
             | HitterProjectionModel
         ]
 
+        src = projection_source.lower()
         if "W" in data and "L" in data and "ERA" in data:
             player_cls = PitcherModel
-            if projection_source.lower() == "steamer":
+            if src in ("steamer", "steamerr"):
                 proj_cls = PitcherSteamerProjectionModel
-            elif projection_source.lower() == "atc":
+            elif src == "atc":
                 proj_cls = PitcherATCProjectionModel
-            elif projection_source.lower() in ["the_bat", "thebat"]:
+            elif src in ("thebat", "rthebat"):
                 proj_cls = PitcherTHEBATProjectionModel
             else:
                 proj_cls = PitcherProjectionModel
         elif "AB" in data and "PA" in data and "RBI" in data:
             player_cls = HitterModel
-            if projection_source.lower() == "steamer":
+            if src in ("steamer", "steamerr"):
                 proj_cls = HitterSteamerProjectionModel
-            elif projection_source.lower() == "atc":
+            elif src == "atc":
                 proj_cls = HitterATCProjectionModel
-            elif projection_source.lower() in ["the_bat", "thebat", "thebatx"]:
+            elif src in ("thebat", "thebatx", "rthebat", "rthebatx"):
                 proj_cls = HitterTHEBATProjectionModel
             else:
                 proj_cls = HitterProjectionModel
