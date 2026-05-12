@@ -12,8 +12,25 @@ from fangraphs_api_extractor.models.hitter import HitterModel, HitterProjectionM
 from fangraphs_api_extractor.models.pitcher import PitcherModel, PitcherProjectionModel
 from fangraphs_api_extractor.utils.weighted_average import (
     _calculate_weighted_average_projections,
+    _round_half_up_to_int,
     merge_player_projections,
 )
+
+
+def test_round_half_up_to_int_uses_half_away_from_zero():
+    """Regression: integer-field rounding must use ROUND_HALF_UP, not banker's.
+
+    Production case that surfaced the bug: Aaron Judge HR with uzips=51 and
+    steameru=50 at 50/50 weights → 50.5 → must round UP to 51, not down to 50
+    like Python's built-in round() would.
+    """
+    assert _round_half_up_to_int(50.5) == 51
+    assert _round_half_up_to_int(49.5) == 50
+    assert _round_half_up_to_int(50.50245) == 51
+    assert _round_half_up_to_int(-50.5) == -51  # half-away-from-zero, not toward-zero
+    assert _round_half_up_to_int(0.5) == 1
+    assert _round_half_up_to_int(1.4) == 1
+    assert _round_half_up_to_int(1.6) == 2
 
 
 # Custom projection model for testing edge cases

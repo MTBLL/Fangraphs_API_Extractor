@@ -5,12 +5,24 @@ This module provides functions to calculate weighted averages across multiple
 projection sources for baseball player statistics.
 """
 
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.models.base_player import BaseProjectionModel
 from fangraphs_api_extractor.models.hitter import HitterProjectionModel
 from fangraphs_api_extractor.models.pitcher import PitcherProjectionModel
+
+
+def _round_half_up_to_int(value: float) -> int:
+    """Round half-away-from-zero to the nearest integer.
+
+    Python's built-in round() uses banker's rounding (round-half-to-even), so
+    round(50.5) == 50 — which is wrong for things like HR counts where the
+    natural expectation is round(50.5) == 51. Decimal + ROUND_HALF_UP gives
+    the expected behavior.
+    """
+    return int(Decimal(repr(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _calculate_weighted_average_projections(
@@ -154,7 +166,7 @@ def _calculate_weighted_average_projections(
 
                 # Round to integer if the field was originally an integer type
                 if is_integer_field:
-                    averaged[field_name] = int(round(weighted_sum))
+                    averaged[field_name] = _round_half_up_to_int(weighted_sum)
                 else:
                     averaged[field_name] = float(weighted_sum)
 
