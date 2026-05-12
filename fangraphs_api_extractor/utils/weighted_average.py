@@ -5,12 +5,24 @@ This module provides functions to calculate weighted averages across multiple
 projection sources for baseball player statistics.
 """
 
-from typing import Any, Dict, List, Mapping, Union
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.models.base_player import BaseProjectionModel
 from fangraphs_api_extractor.models.hitter import HitterProjectionModel
 from fangraphs_api_extractor.models.pitcher import PitcherProjectionModel
+
+
+def _round_half_up_to_int(value: float) -> int:
+    """Round half-away-from-zero to the nearest integer.
+
+    Python's built-in round() uses banker's rounding (round-half-to-even), so
+    round(50.5) == 50 — which is wrong for things like HR counts where the
+    natural expectation is round(50.5) == 51. Decimal + ROUND_HALF_UP gives
+    the expected behavior.
+    """
+    return int(Decimal(repr(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _calculate_weighted_average_projections(
@@ -43,6 +55,10 @@ def _calculate_weighted_average_projections(
     """
     if not projections:
         return {}
+
+    # Steamer-family sources contribute qq/tt percentiles even at weight 0.
+    # Both pre-season (steamer) and rest-of-season (steamerr) emit these fields.
+    steamer_family = {"steamer", "steamerr"}
 
     # Define Steamer-only fields (qq and tt percentiles)
     # Note: qq values represent wOBA percentiles for hitters, RA/9 percentiles for pitchers
@@ -100,8 +116,8 @@ def _calculate_weighted_average_projections(
             if source_name not in weights:
                 continue
 
-            # Special handling for Steamer source with weight 0
-            if source_name == "steamer" and weights[source_name] == 0:
+            # Special handling for Steamer-family source with weight 0
+            if source_name in steamer_family and weights[source_name] == 0:
                 # Only include Steamer for qq and tt fields
                 if not is_steamer_only_field:
                     continue
@@ -115,9 +131,9 @@ def _calculate_weighted_average_projections(
                     is_integer_field = True
 
                 values_to_average.append(float(field_value))
-                # For Steamer qq/tt fields with weight 0, use full weight
+                # For Steamer-family qq/tt fields with weight 0, use full weight
                 if (
-                    source_name == "steamer"
+                    source_name in steamer_family
                     and weights[source_name] == 0
                     and is_steamer_only_field
                 ):
@@ -127,7 +143,7 @@ def _calculate_weighted_average_projections(
             else:
                 # Only count missing weight for non-Steamer sources or non-qq/tt fields
                 if not (
-                    source_name == "steamer"
+                    source_name in steamer_family
                     and weights[source_name] == 0
                     and not is_steamer_only_field
                 ):
@@ -150,7 +166,7 @@ def _calculate_weighted_average_projections(
 
                 # Round to integer if the field was originally an integer type
                 if is_integer_field:
-                    averaged[field_name] = int(round(weighted_sum))
+                    averaged[field_name] = _round_half_up_to_int(weighted_sum)
                 else:
                     averaged[field_name] = float(weighted_sum)
 
@@ -160,6 +176,7 @@ def _calculate_weighted_average_projections(
 def merge_player_projections(
     players_by_source: Mapping[str, List[PlayerModel]],
     weights: Mapping[str, float],
+    target_slot: str = "projections",
 ) -> List[PlayerModel]:
     """
     Merge player projections from multiple sources with weighted averaging.
@@ -206,18 +223,23 @@ def merge_player_projections(
                 if source_projections is not base_player._source_projections:
                     base_player._source_projections.update(source_projections)
             else:
-                projection = getattr(player, "projection", None)
+                # parse_player attaches the parsed projection to `.projections`
+                projection = getattr(player, "projections", None)
                 if projection is not None:
                     base_player._source_projections[source_name] = projection
 
             if player is not base_player:
-                player.projection = None
+                player.projections = None
                 if hasattr(player, "_source_projections"):
                     player._source_projections.clear()
 
-    # Second pass: calculate weighted averages for each player
+    # Second pass: calculate weighted averages for each player and write the
+    # result into the target slot (`projections` for full-year, `ros` for RoS).
     for player in players_by_id.values():
         projections = player._source_projections
+        merged: Optional[
+            Union[HitterProjectionModel, PitcherProjectionModel, BaseProjectionModel]
+        ]
         if len(projections) > 1:
             averaged_proj = _calculate_weighted_average_projections(
                 projections, weights
@@ -234,13 +256,19 @@ def merge_player_projections(
                         avg_model = PitcherProjectionModel(**averaged_proj)
                     case _:
                         avg_model = BaseProjectionModel(**averaged_proj)
-                player.projection = avg_model
+                merged = avg_model
             else:
-                player.projection = next(iter(projections.values()))
+                merged = next(iter(projections.values()))
         elif projections:
-            player.projection = next(iter(projections.values()))
+            merged = next(iter(projections.values()))
         else:
-            player.projection = None
+            merged = None
+
+        setattr(player, target_slot, merged)
+        # If the merge target isn't `projections`, clear out the transient value
+        # that parse_player wrote there.
+        if target_slot != "projections":
+            player.projections = None
 
         player._source_projections.clear()
 

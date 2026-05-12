@@ -1,20 +1,27 @@
 """Tests for PlayerRunner."""
 
-import json
+import copy
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fangraphs_api_extractor.managers import PlayersManager
-from fangraphs_api_extractor.models import HitterModel, PitcherModel
+from fangraphs_api_extractor.models import (
+    HitterModel,
+    HitterProjectionModel,
+    PitcherModel,
+    PitcherProjectionModel,
+)
 from fangraphs_api_extractor.runners import PlayerRunner
 
 
 @pytest.fixture
 def sample_hitters():
-    """Create sample hitter models."""
+    """Create sample hitter models with a parsed projection attached.
+
+    Mirrors what `parse_player` produces — the merge reads `.projections` from
+    each parsed input and aggregates into `_source_projections`.
+    """
     hitters = []
     for i in range(5):
         data = {
@@ -29,13 +36,15 @@ def sample_hitters():
             "HR": 30,
             "AVG": 0.300,
         }
-        hitters.append(HitterModel.model_validate(data))
+        h = HitterModel.model_validate(data)
+        h.projections = HitterProjectionModel.model_validate(data)
+        hitters.append(h)
     return hitters
 
 
 @pytest.fixture
 def sample_pitchers():
-    """Create sample pitcher models."""
+    """Create sample pitcher models with a parsed projection attached."""
     pitchers = []
     for i in range(3):
         data = {
@@ -49,15 +58,59 @@ def sample_pitchers():
             "ERA": 3.50,
             "IP": 150.0,
         }
-        pitchers.append(PitcherModel.model_validate(data))
+        p = PitcherModel.model_validate(data)
+        p.projections = PitcherProjectionModel.model_validate(data)
+        pitchers.append(p)
     return pitchers
+
+
+def _mock_triple_fetch(
+    mock_handler, projections_result, projs_updated_result, ros_result
+):
+    """Configure the mocked fetch handler to return distinct results for the
+    three calls PlayerRunner.run makes, in order: projections, projs_updated, ros.
+
+    Deepcopies the inputs so each cycle operates on independent PlayerModel
+    instances — mirrors production where the fetch handler returns fresh
+    instances per call. Without this, later merges would wipe state on the
+    same objects that earlier merges already wrote to.
+    """
+    mock_handler.fetch_all_players_multi_source.side_effect = [
+        copy.deepcopy(projections_result),
+        copy.deepcopy(projs_updated_result),
+        copy.deepcopy(ros_result),
+    ]
+
+
+# Convenience: a "default" set of mock results that populates all three slots
+# from the same fixture data. Useful when a test doesn't care about the
+# per-slot distinction.
+def _mock_all_slots_populated(mock_handler, sample_hitters, sample_pitchers):
+    """All three fetches return the same sample data — each slot ends up
+    populated with merged projections for every fixture player.
+    """
+    _mock_triple_fetch(
+        mock_handler,
+        projections_result=(
+            {"thebatx": sample_hitters},
+            {"oopsy": sample_pitchers},
+        ),
+        projs_updated_result=(
+            {"uzips": sample_hitters},
+            {"uzips": sample_pitchers},
+        ),
+        ros_result=(
+            {"rthebatx": sample_hitters},
+            {"roopsydc": sample_pitchers},
+        ),
+    )
 
 
 def test_player_runner_initialization():
     """Test PlayerRunner initialization."""
-    runner = PlayerRunner(year=2025, threads=4, batch_size=50)
+    runner = PlayerRunner(year=2026, threads=4, batch_size=50)
 
-    assert runner.year == 2025
+    assert runner.year == 2026
     assert runner.threads == 4
     assert runner.batch_size == 50
     assert runner.logger is not None
@@ -67,91 +120,176 @@ def test_player_runner_initialization():
 
 
 def test_player_runner_initialization_defaults():
-    """Test PlayerRunner initialization with default values."""
-    runner = PlayerRunner(year=2025)
+    """Test PlayerRunner initialization wires up all three default slots."""
+    runner = PlayerRunner(year=2026)
 
-    assert runner.year == 2025
-    assert runner.threads is None  # Should use default
-    assert runner.batch_size == 100  # Default value
-
-
-def test_apply_sample_limit_within_limit(sample_hitters, sample_pitchers):
-    """Test _apply_sample_limit when sample size is larger than total."""
-    runner = PlayerRunner(year=2025)
-
-    # Sample size larger than total (5 hitters + 3 pitchers = 8 total)
-    result = runner._apply_sample_limit(sample_hitters, sample_pitchers, sample_size=10)
-
-    # Should return all players
-    assert len(result) == 8
+    assert runner.year == 2026
+    assert runner.threads is None
+    assert runner.batch_size == 100
+    # All three slots configured
+    assert set(runner.sources.keys()) == {"projections", "projs_updated", "ros"}
+    # projections slot uses the canonical pre-season mix
+    assert runner.sources["projections"]["batters"][0] == "thebatx"
+    # updates slot uses the two refit sources at equal weight
+    assert runner.sources["projs_updated"]["batters"] == ["uzips", "steameru"]
+    assert runner.weights["projs_updated"]["batters"] == {"uzips": 0.5, "steameru": 0.5}
+    # ros slot uses the rest-of-season mix
+    assert runner.sources["ros"]["batters"][0] == "rthebatx"
 
 
-def test_apply_sample_limit_exceeds_total(sample_hitters, sample_pitchers):
-    """Test _apply_sample_limit when sample size is smaller than total."""
-    runner = PlayerRunner(year=2025)
+def test_equal_weights_from_sources_handles_empty_source_list():
+    """`_equal_weights_from_sources` must not crash or omit empty source lists.
 
-    # Sample size smaller than total (5 hitters + 3 pitchers = 8 total)
-    # With sample_size=4, takes min(4, 5) hitters + min(4, 3) pitchers = 4 + 3 = 7
-    result = runner._apply_sample_limit(sample_hitters, sample_pitchers, sample_size=4)
+    A slot with an empty list (e.g. caller explicitly disables a slot via
+    `{"projections": {"batters": []}}`) should produce `{}` for that position,
+    not raise ZeroDivisionError or skip the key.
+    """
+    sources = {
+        "projections": {"batters": [], "pitchers": ["only_one"]},
+    }
+    weights = PlayerRunner._equal_weights_from_sources(sources)
 
-    # Should have 4 hitters + 3 pitchers = 7
-    assert len(result) == 7
+    assert weights["projections"]["batters"] == {}
+    assert weights["projections"]["pitchers"] == {"only_one": 1.0}
 
 
-def test_apply_sample_limit_splits_evenly(sample_hitters, sample_pitchers):
-    """Test _apply_sample_limit distributes between hitters and pitchers."""
-    runner = PlayerRunner(year=2025)
+@patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
+def test_fetch_and_merge_slot_skips_empty_position_lists(
+    mock_handler_class, sample_hitters, sample_pitchers
+):
+    """A slot with one populated position and one empty position must skip the
+    empty one in the log/fetch loop without erroring.
+    """
+    mock_handler = MagicMock()
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"thebatx": sample_hitters},
+        {},  # no pitchers
+    )
+    mock_handler_class.return_value = mock_handler
 
-    # Sample size of 6 with 5 hitters and 3 pitchers
-    # Takes min(6, 5) hitters + min(6, 3) pitchers = 5 + 3 = 8
-    result = runner._apply_sample_limit(sample_hitters, sample_pitchers, sample_size=6)
+    sources = {
+        "projections": {"batters": ["thebatx"], "pitchers": []},
+    }
+    runner = PlayerRunner(year=2026, sources=sources)
+    h, p = runner._fetch_and_merge_slot("projections")
 
-    # Should return all 8 players (5 hitters + 3 pitchers)
-    assert len(result) == 8
+    # batters merged, pitchers empty — and crucially no crash from the empty list
+    assert len(h) == 5
+    assert p == []
+
+
+@patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
+def test_fetch_and_merge_slot_skips_when_no_sources(
+    mock_handler_class, sample_hitters, sample_pitchers
+):
+    """When a slot has empty source lists for every position, `_fetch_and_merge_slot`
+    must short-circuit without calling the fetch handler at all.
+    """
+    mock_handler = MagicMock()
+    mock_handler_class.return_value = mock_handler
+
+    sources = {
+        "projections": {"batters": ["thebatx"], "pitchers": ["oopsy"]},
+        # `projs_updated` slot omitted entirely — the runner should skip it.
+        "ros": {"batters": [], "pitchers": []},  # explicitly empty
+    }
+    runner = PlayerRunner(year=2026, sources=sources)
+
+    # projs_updated slot — never configured
+    h, p = runner._fetch_and_merge_slot("projs_updated")
+    assert h == [] and p == []
+
+    # ros slot — configured but all empty lists
+    h, p = runner._fetch_and_merge_slot("ros")
+    assert h == [] and p == []
+
+    # Fetch handler was never invoked for these skip cases
+    mock_handler.fetch_all_players_multi_source.assert_not_called()
+
+
+def test_custom_sources_without_weights_derives_equal_weights():
+    """Regression: custom sources + no weights should derive equal weights.
+
+    Previous behavior: equal weights computed from supplied sources.
+    Bug introduced during the three-slot refactor: weights fell back to
+    DEFAULT_*_WEIGHTS, which are keyed by *default* source names — so any
+    custom source got `source_name not in weights` -> silently dropped from
+    the merge. This test pins the correct behavior in place.
+    """
+    custom_sources = {
+        "projections": {
+            "batters": ["custom_a", "custom_b", "custom_c"],
+            "pitchers": ["custom_a", "custom_b"],
+        },
+        # Other slots omitted entirely — the runner should still handle that.
+    }
+    runner = PlayerRunner(year=2026, sources=custom_sources)
+
+    # Every custom source must appear in the derived weights dict — otherwise
+    # the merge will skip them via `source_name not in weights`.
+    assert set(runner.weights["projections"]["batters"].keys()) == {
+        "custom_a",
+        "custom_b",
+        "custom_c",
+    }
+    assert set(runner.weights["projections"]["pitchers"].keys()) == {
+        "custom_a",
+        "custom_b",
+    }
+    # Weights are equal (1/n per source) and sum to 1.0 per position.
+    bw = runner.weights["projections"]["batters"]
+    assert all(abs(w - 1.0 / 3) < 1e-12 for w in bw.values())
+    assert abs(sum(bw.values()) - 1.0) < 1e-12
+    pw = runner.weights["projections"]["pitchers"]
+    assert all(abs(w - 0.5) < 1e-12 for w in pw.values())
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
 def test_run_success(mock_handler_class, sample_hitters, sample_pitchers):
-    """Test successful run execution."""
-    # Setup mock handler
+    """Test successful run execution — three fetches: projections, updates, ros."""
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": sample_hitters},
-        {"steamer": sample_pitchers},
-    )
+    _mock_all_slots_populated(mock_handler, sample_hitters, sample_pitchers)
     mock_handler_class.return_value = mock_handler
 
-    runner = PlayerRunner(year=2025)
+    runner = PlayerRunner(year=2026)
     players = runner.run()
 
-    # Verify results
+    # 5 unique hitter ids + 3 unique pitcher ids
     assert players is not None
-    assert len(players) == 8  # 5 hitters + 3 pitchers
+    assert len(players) == 8
 
-    # Verify handler method was called with correct sources
-    mock_handler.fetch_all_players_multi_source.assert_called_once_with(
-        {"batters": ["steamer"], "pitchers": ["steamer"]}
-    )
+    # Handler was called three times: projections, updates, ros — in order
+    assert mock_handler.fetch_all_players_multi_source.call_count == 3
+    call_args = [
+        c.args[0] for c in mock_handler.fetch_all_players_multi_source.call_args_list
+    ]
+    assert call_args[0]["batters"][0] == "thebatx"  # projections
+    assert call_args[1] == {  # updates
+        "batters": ["uzips", "steameru"],
+        "pitchers": ["uzips", "steameru"],
+    }
+    assert call_args[2] == {  # ros
+        "batters": ["rthebatx", "rfangraphsdc", "ratcdc"],
+        "pitchers": ["roopsydc", "rfangraphsdc", "ratcdc"],
+    }
+
+    # Each player should have all three slots populated
+    for p in players:
+        assert p.projections is not None
+        assert p.projs_updated is not None
+        assert p.ros is not None
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
 def test_run_with_sample_size(mock_handler_class, sample_hitters, sample_pitchers):
-    """Test run with sample size limit."""
-    # Setup mock handler
+    """Test run with sample size limit applied to the merged player list."""
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": sample_hitters},
-        {"steamer": sample_pitchers},
-    )
+    _mock_all_slots_populated(mock_handler, sample_hitters, sample_pitchers)
     mock_handler_class.return_value = mock_handler
 
-    runner = PlayerRunner(year=2025)
+    runner = PlayerRunner(year=2026)
     players = runner.run(sample_size=3)
 
-    # With the new logic, sample_size just limits the final combined list
-    # So we get the first 3 players from the combined list (5 hitters + 3 pitchers)
     assert players is not None
     assert len(players) == 3
 
@@ -161,69 +299,73 @@ def test_run_with_sample_size(mock_handler_class, sample_hitters, sample_pitcher
 def test_run_with_output_dir(
     mock_save_results, mock_handler_class, sample_hitters, sample_pitchers
 ):
-    """Test run with output directory specified."""
-    # Setup mock handler
+    """Test run with output directory persists results."""
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": sample_hitters},
-        {"steamer": sample_pitchers},
-    )
+    _mock_all_slots_populated(mock_handler, sample_hitters, sample_pitchers)
     mock_handler_class.return_value = mock_handler
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        runner = PlayerRunner(year=2025)
+        runner = PlayerRunner(year=2026)
         players = runner.run(output_dir=tmpdir)
 
-        # Verify save_extraction_results was called with split lists
         mock_save_results.assert_called_once()
         _, call_kwargs = mock_save_results.call_args
         assert call_kwargs["output_dir"] == tmpdir
-        assert call_kwargs["year"] == 2025
+        assert call_kwargs["year"] == 2026
         assert len(call_kwargs["batters"]) == 5
         assert len(call_kwargs["pitchers"]) == 3
 
-        # Verify players returned
         assert players is not None
         assert len(players) == 8
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
-def test_run_without_output_dir(mock_handler_class, sample_hitters, sample_pitchers):
-    """Test run without output directory (no file written)."""
-    # Setup mock handler
+def test_run_predraft_empty_updates_and_ros(
+    mock_handler_class, sample_hitters, sample_pitchers
+):
+    """Pre-draft: only `projections` returns data; `updates` and `ros` are empty.
+
+    Both empty slots should leave their attributes as None on the model
+    (serializer emits them as {} downstream).
+    """
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": sample_hitters},
-        {"steamer": sample_pitchers},
+    _mock_triple_fetch(
+        mock_handler,
+        projections_result=(
+            {"thebatx": sample_hitters},
+            {"oopsy": sample_pitchers},
+        ),
+        projs_updated_result=({}, {}),  # uzips/steameru not published yet
+        ros_result=({}, {}),       # RoS not published yet
     )
     mock_handler_class.return_value = mock_handler
 
-    runner = PlayerRunner(year=2025)
-    players = runner.run(output_dir=None)
+    runner = PlayerRunner(year=2026)
+    players = runner.run()
 
-    # Should still return players
     assert players is not None
     assert len(players) == 8
+    for p in players:
+        assert p.projections is not None
+        assert p.projs_updated is None
+        assert p.ros is None
 
 
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
 def test_run_with_empty_results(mock_handler_class):
-    """Test run when no players are fetched."""
-    # Setup mock handler to return empty result
+    """Test run when no players are fetched on any slot."""
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method returning empty source
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": []},
-        {"steamer": []},
+    _mock_triple_fetch(
+        mock_handler,
+        projections_result=({}, {}),
+        projs_updated_result=({}, {}),
+        ros_result=({}, {}),
     )
     mock_handler_class.return_value = mock_handler
 
-    runner = PlayerRunner(year=2025)
+    runner = PlayerRunner(year=2026)
     players = runner.run()
 
-    # Should return empty list
     assert players == []
 
 
@@ -232,91 +374,73 @@ def test_run_creates_handler_with_correct_year(
     mock_handler_class, sample_hitters, sample_pitchers
 ):
     """Test that run creates handler with correct CoreFangraphs instance."""
-    # Setup mock handler
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": sample_hitters},
-        {"steamer": sample_pitchers},
-    )
+    _mock_all_slots_populated(mock_handler, sample_hitters, sample_pitchers)
     mock_handler_class.return_value = mock_handler
 
     runner = PlayerRunner(year=2024)
     runner.run()
 
-    # Verify handler was created with correct core_fangraphs
     assert mock_handler_class.called
-    # The first arg should be the core_fangraphs instance
     call_args = mock_handler_class.call_args
     assert call_args[0][0] == runner.core_fangraphs
 
 
-def test_apply_sample_limit_zero_sample(sample_hitters, sample_pitchers):
-    """Test _apply_sample_limit with zero sample size."""
-    runner = PlayerRunner(year=2025)
-
-    result = runner._apply_sample_limit(sample_hitters, sample_pitchers, sample_size=0)
-
-    # With sample_size=0, should return empty list
-    assert len(result) == 0
-
-
 @patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
-def test_run_with_multiple_sources(mock_handler_class):
-    """Test run with multiple projection sources using real fixtures."""
-    # Load real fixture data
-    fixtures_dir = Path(__file__).parent.parent / "fixtures"
-
-    with open(fixtures_dir / "hitter_steamer.json") as f:
-        steamer_hitter_data = json.load(f)
-
-    with open(fixtures_dir / "hitter_fangraphsdc.json") as f:
-        fangraphsdc_hitter_data = json.load(f)
-
-    # Parse players from each source
-    steamer_manager = PlayersManager("hitters")
-    steamer_players = steamer_manager.parse_players(
-        steamer_hitter_data, projection_source="steamer"
-    )
-
-    fangraphsdc_manager = PlayersManager("hitters")
-    fangraphsdc_players = fangraphsdc_manager.parse_players(
-        fangraphsdc_hitter_data[0:1], projection_source="fangraphsdc"
-    )
-
-    # Setup mock handler
+def test_run_with_custom_sources(mock_handler_class, sample_hitters, sample_pitchers):
+    """Test run with custom per-slot sources and weights."""
     mock_handler = MagicMock()
-    # Mock the multi-source fetch method returning data from two sources
-    mock_handler.fetch_all_players_multi_source.return_value = (
-        {"steamer": steamer_players, "fangraphsdc": fangraphsdc_players},
-        {"steamer": [], "fangraphsdc": []},
+    _mock_triple_fetch(
+        mock_handler,
+        projections_result=(
+            {"thebatx": sample_hitters},
+            {"oopsy": sample_pitchers},
+        ),
+        projs_updated_result=(
+            {"uzips": sample_hitters, "steameru": sample_hitters},
+            {"uzips": sample_pitchers, "steameru": sample_pitchers},
+        ),
+        ros_result=(
+            {"rthebatx": sample_hitters},
+            {"roopsydc": sample_pitchers},
+        ),
     )
     mock_handler_class.return_value = mock_handler
 
-    # Create runner with multiple sources and weights
     sources = {
-        "batters": ["steamer", "fangraphsdc"],
-        "pitchers": ["steamer", "fangraphsdc"],
+        "projections": {
+            "batters": ["thebatx"],
+            "pitchers": ["oopsy"],
+        },
+        "projs_updated": {
+            "batters": ["uzips", "steameru"],
+            "pitchers": ["uzips", "steameru"],
+        },
+        "ros": {
+            "batters": ["rthebatx"],
+            "pitchers": ["roopsydc"],
+        },
     }
     weights = {
-        "batters": {"steamer": 0.75, "fangraphsdc": 0.25},
-        "pitchers": {"steamer": 0.75, "fangraphsdc": 0.25},
+        "projections": {
+            "batters": {"thebatx": 1.0},
+            "pitchers": {"oopsy": 1.0},
+        },
+        "projs_updated": {
+            "batters": {"uzips": 0.75, "steameru": 0.25},
+            "pitchers": {"uzips": 0.75, "steameru": 0.25},
+        },
+        "ros": {
+            "batters": {"rthebatx": 1.0},
+            "pitchers": {"roopsydc": 1.0},
+        },
     }
-    runner = PlayerRunner(year=2025, sources=sources, weights=weights)
+    runner = PlayerRunner(year=2026, sources=sources, weights=weights)
     players = runner.run()
 
-    # Verify results
     assert players is not None
-    assert len(players) > 2
-
-    # Verify handler method was called with correct sources
-    mock_handler.fetch_all_players_multi_source.assert_called_once_with(
-        {
-            "batters": ["steamer", "fangraphsdc"],
-            "pitchers": ["steamer", "fangraphsdc"],
-        }
-    )
-
-    # Verify each player has a projection
-    for player in players:
-        assert player.projection is not None
+    assert len(players) == 8
+    for p in players:
+        assert p.projections is not None
+        assert p.projs_updated is not None
+        assert p.ros is not None

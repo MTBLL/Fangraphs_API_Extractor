@@ -3,15 +3,29 @@
 import json
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
 from fangraphs_api_extractor.models import HitterModel
 from fangraphs_api_extractor.utils.utils import (
     get_nested_values,
+    round_floats,
     save_extraction_results,
     serialize_players,
 )
+
+
+def test_round_floats_recurses_into_lists():
+    """`round_floats` must recurse into list values, not just dicts."""
+    # Top-level list
+    assert round_floats([0.1234, 0.5556, 0.9999]) == [0.123, 0.556, 1.0]
+    # List nested inside dict
+    nested = {"qq": [0.0005, 0.1234, 0.5], "name": "x"}
+    assert round_floats(nested) == {"qq": [0.001, 0.123, 0.5], "name": "x"}
+    # Non-numeric items left alone in a list
+    mixed = [0.1234, "str", 42, None, [0.7654]]
+    assert round_floats(mixed) == [0.123, "str", 42, None, [0.765]]
 
 
 @pytest.fixture
@@ -44,8 +58,13 @@ def test_serialize_players_single(sample_hitter):
     assert result[0]["team"] == "NYY"
     assert result[0]["playerid"] == "15640"
     assert result[0]["slug"] == "aaron-judge"
-    assert "projection" in result[0]
-    assert result[0]["projection"] == {}
+    assert "projections" in result[0]
+    assert "projs_updated" in result[0]
+    assert "ros" in result[0]
+    # Empty slots serialize as {} (not null) so downstream sees a consistent shape
+    assert result[0]["projections"] == {}
+    assert result[0]["projs_updated"] == {}
+    assert result[0]["ros"] == {}
 
 
 def test_serialize_players_multiple(sample_hitter):
@@ -75,13 +94,16 @@ def test_serialize_players_with_projection(sample_hitter):
         "HR": 30,
         "AVG": 0.300,
     }
-    sample_hitter.projection = HitterSteamerProjectionModel.model_validate(proj_data)
+    sample_hitter.projections = HitterSteamerProjectionModel.model_validate(proj_data)
 
     result = serialize_players([sample_hitter])
 
-    assert "projection" in result[0]
+    assert "projections" in result[0]
     # Check that projection data was serialized with aliases (field name is uppercase 'HR')
-    assert result[0]["projection"]["HR"] == 30
+    assert result[0]["projections"]["HR"] == 30
+    # Other slots are independent and serialize as {} when not populated
+    assert result[0]["projs_updated"] == {}
+    assert result[0]["ros"] == {}
 
 
 def test_save_extraction_results_from_fixtures(single_pitcher, single_hitter):
@@ -97,12 +119,8 @@ def test_save_extraction_results_from_fixtures(single_pitcher, single_hitter):
             timestamp=timestamp,
         )
 
-        pitcher_path = os.path.join(
-            tmpdir, f"fangraph_pitchers_2025_{timestamp}.json"
-        )
-        batter_path = os.path.join(
-            tmpdir, f"fangraph_batters_2025_{timestamp}.json"
-        )
+        pitcher_path = os.path.join(tmpdir, f"fangraph_pitchers_2025_{timestamp}.json")
+        batter_path = os.path.join(tmpdir, f"fangraph_batters_2025_{timestamp}.json")
 
         assert os.path.exists(pitcher_path)
         assert os.path.exists(batter_path)
@@ -114,8 +132,10 @@ def test_save_extraction_results_from_fixtures(single_pitcher, single_hitter):
 
         assert len(pitcher_output) == 1
         assert len(batter_output) == 1
-        assert "projection" in pitcher_output[0]
-        assert "projection" in batter_output[0]
+        for blob in (pitcher_output[0], batter_output[0]):
+            assert "projections" in blob
+            assert "projs_updated" in blob
+            assert "ros" in blob
 
 
 def test_save_extraction_results_write_errors(
@@ -211,8 +231,52 @@ def test_serialize_players_with_missing_attributes():
     assert result[0]["xmlbam_id"] == -1
 
 
+def test_serialize_players_catches_catastrophic_player_failure():
+    """The outer try/except in serialize_players catches errors that fire
+    before the per-slot serialization (e.g. round_floats raising on a weird
+    value), producing a stub record with an `error` key rather than aborting.
+    """
+    from unittest.mock import MagicMock
+
+    # A player whose `name` attribute access raises a non-AttributeError
+    # propagates up through the outer try/except.
+    player = MagicMock()
+    # The two-arg `getattr` falls back on AttributeError but not RuntimeError,
+    # so a RuntimeError from the descriptor propagates and triggers the outer
+    # except. The fallback path then does getattr(player, "name", "unknown")
+    # again, which also raises, but the inner-of-except uses the same getattr
+    # with a default — so we need name to ALSO be accessible somewhere.
+    type(player).name = "Catastrophe Player"  # class attr, not descriptor
+    type(player).ascii_name = "Catastrophe Player"
+
+    # Force round_floats to blow up by making the player return a non-numeric
+    # but float-like object. Simpler: mock model_dump to return something that
+    # makes round_floats raise.
+    bad_proj = MagicMock()
+    bad_proj.model_dump.return_value = {"bad": object()}  # object() isn't JSON-serializable but round_floats handles it fine — need another trigger
+    player.projections = bad_proj
+    player.projs_updated = None
+    player.ros = None
+
+    # Easier approach: patch round_floats to raise once
+    with patch(
+        "fangraphs_api_extractor.utils.utils.round_floats",
+        side_effect=RuntimeError("simulated catastrophe"),
+    ):
+        result = serialize_players([player])
+
+    assert len(result) == 1
+    assert "error" in result[0]
+    assert result[0]["name"] == "Catastrophe Player"
+
+
 def test_serialize_players_with_projection_error():
-    """Test serialization when projection processing fails."""
+    """Test serialization when one projection slot fails to dump.
+
+    Per-slot errors are caught individually: the failing slot becomes None
+    rather than aborting the whole player record. The other slot and basic
+    player attributes are still serialized normally.
+    """
     from unittest.mock import MagicMock
 
     # Create a player with a projection that will fail to serialize
@@ -225,33 +289,48 @@ def test_serialize_players_with_projection_error():
     player.slug = "test-player"
     player.stats_api = "/players/test-player/12345/stats.json"
 
-    # Create a projection that will raise an exception
+    # Create a projection that will raise on model_dump
     bad_projection = MagicMock()
     bad_projection.model_dump.side_effect = Exception("Projection serialization error")
-    player.projection = bad_projection
+    player.projections = bad_projection
+    player.projs_updated = None
+    player.ros = None
 
     result = serialize_players([player])
 
-    # Should still serialize the player with empty projection
+    # Player still serialized; failing slot is {}.
     assert len(result) == 1
     assert result[0]["name"] == "Test Player"
-    assert result[0]["projection"] == {}
+    assert result[0]["projections"] == {}
+    assert result[0]["projs_updated"] == {}
+    assert result[0]["ros"] == {}
 
 
 def test_serialize_players_with_player_error():
-    """Test serialization when player processing completely fails."""
+    """Test serialization when a slot accessor raises during attribute access.
 
-    # Create a player that has a name but raises exception on projection access
+    A property that raises on `.projections` is caught by the per-slot
+    try/except — the slot becomes None and the player is still serialized.
+    """
+
     class BadPlayer:
         name = "Error Player"
+        team = "FA"
+        playerid = "x"
+        xmlbam_id = -1
+        slug = ""
+        stats_api = ""
+        projs_updated = None
+        ros = None
 
         @property
-        def projection(self):
-            raise RuntimeError("Cannot access projection")
+        def projections(self):
+            raise RuntimeError("Cannot access projections")
 
     result = serialize_players([BadPlayer()])  # type: ignore[list-item]
 
-    # Should add player with error info from exception handler
     assert len(result) == 1
-    assert "error" in result[0]
     assert result[0]["name"] == "Error Player"
+    assert result[0]["projections"] == {}
+    assert result[0]["projs_updated"] == {}
+    assert result[0]["ros"] == {}

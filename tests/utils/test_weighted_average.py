@@ -12,8 +12,53 @@ from fangraphs_api_extractor.models.hitter import HitterModel, HitterProjectionM
 from fangraphs_api_extractor.models.pitcher import PitcherModel, PitcherProjectionModel
 from fangraphs_api_extractor.utils.weighted_average import (
     _calculate_weighted_average_projections,
+    _round_half_up_to_int,
     merge_player_projections,
 )
+
+
+def test_merge_writes_none_when_player_has_no_source_projections():
+    """When a player enters the merge with no projections from any source,
+    the target slot is set to None (line 265: `merged = None`).
+
+    This happens when a source's player list contains a player whose
+    `.projections` is None and `._source_projections` is empty — the
+    canonical "no data" state.
+    """
+    bare = HitterModel.model_validate(
+        {
+            "Team": "NYY",
+            "playerid": "0000",
+            "PlayerName": "Bare",
+            "xMLBAMID": 0,
+            "teamid": 0,
+            "AB": 0,
+            "PA": 0,
+            "RBI": 0,
+        }
+    )
+    # bare.projections is None and bare._source_projections is empty by default
+    result = merge_player_projections(
+        {"steamer": [bare]}, {"steamer": 1.0}, target_slot="projections"
+    )
+    assert len(result) == 1
+    assert result[0].projections is None
+
+
+def test_round_half_up_to_int_uses_half_away_from_zero():
+    """Regression: integer-field rounding must use ROUND_HALF_UP, not banker's.
+
+    Production case that surfaced the bug: Aaron Judge HR with uzips=51 and
+    steameru=50 at 50/50 weights → 50.5 → must round UP to 51, not down to 50
+    like Python's built-in round() would.
+    """
+    assert _round_half_up_to_int(50.5) == 51
+    assert _round_half_up_to_int(49.5) == 50
+    assert _round_half_up_to_int(50.50245) == 51
+    assert _round_half_up_to_int(-50.5) == -51  # half-away-from-zero, not toward-zero
+    assert _round_half_up_to_int(0.5) == 1
+    assert _round_half_up_to_int(1.4) == 1
+    assert _round_half_up_to_int(1.6) == 2
 
 
 # Custom projection model for testing edge cases
@@ -211,8 +256,8 @@ class TestCalculateWeightedAverageProjections:
     def test_calculate_weighted_average_projections_with_oopsy_source(
         self, mason_miller_oopsy, mason_miller_fangraphsdc
     ):
-        proj_oopsy = mason_miller_oopsy.projection
-        proj_dc = mason_miller_fangraphsdc.projection
+        proj_oopsy = mason_miller_oopsy.projections
+        proj_dc = mason_miller_fangraphsdc.projections
         assert proj_oopsy is not None
         assert proj_dc is not None
 
@@ -252,7 +297,7 @@ class TestMergePlayerProjections:
             teamid=9,
             xMLBAMID=123456,
         )
-        pitcher1.projection = PitcherProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        pitcher1.projections = PitcherProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             IP=180.0, W=12, ERA=3.50
         )
 
@@ -264,7 +309,7 @@ class TestMergePlayerProjections:
             teamid=9,
             xMLBAMID=123456,
         )
-        pitcher2.projection = PitcherProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        pitcher2.projections = PitcherProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             IP=175.0, W=11, ERA=3.86
         )
 
@@ -277,8 +322,8 @@ class TestMergePlayerProjections:
         player = result[0]
         # Verify it's the base player with a weighted projection
         assert player is pitcher1
-        assert isinstance(player.projection, PitcherProjectionModel)
-        assert pitcher2.projection is None
+        assert isinstance(player.projections, PitcherProjectionModel)
+        assert pitcher2.projections is None
         assert pitcher1._source_projections == {}
         assert pitcher2._source_projections == {}
 
@@ -292,7 +337,7 @@ class TestMergePlayerProjections:
             teamid=10,
             xMLBAMID=654321,
         )
-        hitter1.projection = HitterProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        hitter1.projections = HitterProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             PA=600, HR=30, AVG=0.280
         )
         hitter1 = cast(PlayerModel, hitter1)
@@ -305,7 +350,7 @@ class TestMergePlayerProjections:
             teamid=10,
             xMLBAMID=654321,
         )
-        hitter2.projection = HitterProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        hitter2.projections = HitterProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             PA=580, HR=28, AVG=0.275
         )
 
@@ -318,8 +363,8 @@ class TestMergePlayerProjections:
         player = result[0]
         # Verify it's the base player with a weighted projection
         assert player is hitter1
-        assert isinstance(player.projection, HitterProjectionModel)
-        assert hitter2.projection is None
+        assert isinstance(player.projections, HitterProjectionModel)
+        assert hitter2.projections is None
         assert hitter1._source_projections == {}
         assert hitter2._source_projections == {}
 
@@ -333,7 +378,7 @@ class TestMergePlayerProjections:
             teamid=9,
             xMLBAMID=111111,
         )
-        hitter1.projection = HitterProjectionModel(HR=30)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        hitter1.projections = HitterProjectionModel(HR=30)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
 
         hitter2 = HitterModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             PlayerName="Player 2",
@@ -342,7 +387,7 @@ class TestMergePlayerProjections:
             teamid=10,
             xMLBAMID=222222,
         )
-        hitter2.projection = HitterProjectionModel(HR=25)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        hitter2.projections = HitterProjectionModel(HR=25)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
 
         players_by_source = {"steamer": [hitter1], "fangraphsdc": [hitter2]}
         weights = {"steamer": 0.75, "fangraphsdc": 0.25}
@@ -352,7 +397,7 @@ class TestMergePlayerProjections:
         # Should have 2 players
         assert len(result) == 2
         # Each should keep its single projection
-        hr_values = {player.projection.hr for player in result}
+        hr_values = {player.projections.hr for player in result}
         assert hr_values == {30, 25}
 
     def test_merge_single_projection_keeps_projection(self):
@@ -365,7 +410,7 @@ class TestMergePlayerProjections:
             xMLBAMID=333333,
         )
         projection = HitterProjectionModel(HR=22)  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
-        hitter.projection = projection
+        hitter.projections = projection
         hitter._source_projections["steamer"] = projection
 
         players_by_source = {"steamer": [hitter]}
@@ -376,7 +421,7 @@ class TestMergePlayerProjections:
         assert len(result) == 1
         player = result[0]
         assert player is hitter
-        assert player.projection is projection
+        assert player.projections is projection
         assert player._source_projections == {}
 
     def test_merge_with_base_projection_model(self):
@@ -391,7 +436,7 @@ class TestMergePlayerProjections:
             xMLBAMID=999999,
         )
         # Add a custom projection using the CustomProjectionModel
-        player1.projection = CustomProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        player1.projections = CustomProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             TestStat=100
         )
 
@@ -403,7 +448,7 @@ class TestMergePlayerProjections:
             xMLBAMID=999999,
         )
         # Add another custom projection
-        player2.projection = CustomProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
+        player2.projections = CustomProjectionModel(  # pyright: ignore[reportCallIssue]  # type: ignore[call-arg]
             TestStat=80
         )
         player2 = cast(PitcherModel, player2)
@@ -419,9 +464,9 @@ class TestMergePlayerProjections:
         assert len(result) == 1
         player = result[0]
         # Should be a BaseProjectionModel (not a HitterProjectionModel or PitcherProjectionModel)
-        assert isinstance(player.projection, BaseProjectionModel)
+        assert isinstance(player.projections, BaseProjectionModel)
         # Verify it's specifically BaseProjectionModel and not a subclass
-        assert type(player.projection) is BaseProjectionModel
+        assert type(player.projections) is BaseProjectionModel
 
     def test_merge_with_empty_averaged_projection(self):
         """Test merging when weighted average yields no fields."""
@@ -442,9 +487,9 @@ class TestMergePlayerProjections:
 
         proj1 = BaseProjectionModel()  # type: ignore
         proj2 = BaseProjectionModel()  # type: ignore
-        player1.projection = proj1
+        player1.projections = proj1
         player1._source_projections["source1"] = proj1
-        player2.projection = proj2
+        player2.projections = proj2
         player2._source_projections["source2"] = proj2
 
         player2 = cast(PitcherModel, player2)
@@ -460,9 +505,9 @@ class TestMergePlayerProjections:
         assert len(result) == 1
         player = result[0]
         assert player is player1
-        assert player.projection is proj1
+        assert player.projections is proj1
         assert player._source_projections == {}
-        assert player2.projection is None
+        assert player2.projections is None
         assert player2._source_projections == {}
 
     def test_merge_player_projections_with_real_data(
@@ -478,5 +523,5 @@ class TestMergePlayerProjections:
 
         assert len(results) == 1
         player = results[0]
-        assert player.projection is not None
-        assert player.projection.q10 is not None
+        assert player.projections is not None
+        assert player.projections.q10 is not None

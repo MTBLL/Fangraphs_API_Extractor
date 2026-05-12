@@ -38,10 +38,10 @@ def test_hitter_basic_parsing(hitter_steamer_data):
     assert "stats.json" in player.stats_api
 
     # Test that we have the projection
-    assert isinstance(player.projection, HitterSteamerProjectionModel)
+    assert isinstance(player.projections, HitterSteamerProjectionModel)
 
     # Test some basic projection data
-    proj = player.projection
+    proj = player.projections
     assert proj.hr == 43  # Integer conversion from 42.7926
     assert proj.h == 146  # Integer conversion from 145.548
     assert proj.pa == 634.656

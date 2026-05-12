@@ -23,7 +23,7 @@ def main():
     try:
         # Initialize the extractor
         extractor = PlayerRunner(
-            year=2025,
+            year=2026,
             threads=None,  # Use default (4x CPU cores)
             batch_size=100,
         )

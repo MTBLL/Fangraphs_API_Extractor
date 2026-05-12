@@ -81,10 +81,9 @@ class PlayerFetchHandler:
         Note:
             Pitchers use 'thebat' instead of 'thebatx' - this mapping is handled automatically.
         """
-        # Map thebatx to thebat for pitchers (pitchers don't have batx data)
-        api_source = (
-            "thebat" if projection_source.lower() == "thebatx" else projection_source
-        )
+        # thebatx and rthebatx have no pitcher data; map to their thebat equivalents
+        _batx_map = {"thebatx": "thebat", "rthebatx": "rthebat"}
+        api_source = _batx_map.get(projection_source.lower(), projection_source)
 
         year = self.core_fangraphs.year
         self.log.info(f"Fetching pitcher projections for {year} from {api_source}...")

@@ -1,9 +1,9 @@
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, ForwardRef, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from fangraphs_api_extractor.utils import normalize_string
+from fangraphs_api_extractor.utils.constants import ProjectionSource
 
 T = TypeVar("T", bound="PlayerModel")
 # Use forward references to avoid circular imports
@@ -18,15 +18,6 @@ if TYPE_CHECKING:
     PitcherSteamerProjectionModel = ForwardRef("PitcherSteamerProjectionModel")
     PitcherATCProjectionModel = ForwardRef("PitcherATCProjectionModel")
     PitcherTHEBATProjectionModel = ForwardRef("PitcherTHEBATProjectionModel")
-
-
-class ProjectionSource(str, Enum):
-    STEAMER = "steamer"
-    ATC = "atc"
-    THE_BAT = "the_bat"
-    THE_BATX = "thebatx"
-    ZIPS = "zips"
-    DEPTH_CHARTS = "fangraphsdc"
 
 
 class BaseProjectionModel(BaseModel):
@@ -143,10 +134,21 @@ class PlayerModel(BaseModel):
         # Handle URL transformation
         return self.upurl.replace("stats", "stats.json")
 
-    # Single weighted projection for the player
-    projection: Optional[BaseProjectionModel] = None
+    # Final merged projections per slot.
+    #   - projections:   pre-season full-year projection (the canonical mix; only
+    #                    slot that exposes qq/tt percentile fields, via steamer
+    #                    at weight 0).
+    #   - projs_updated: full-year projection refit with in-season data — empty
+    #                    pre-draft because Fangraphs doesn't publish updated
+    #                    endpoints until the season starts.
+    #   - ros:           rest-of-season projection — empty pre-draft.
+    projections: Optional[BaseProjectionModel] = None
+    projs_updated: Optional[BaseProjectionModel] = None
+    ros: Optional[BaseProjectionModel] = None
 
-    # Track per-source projections during merge without exporting
+    # Track per-source projections during merge without exporting. The merge
+    # writes its result into the target slot (`projections`, `projs_updated`,
+    # or `ros`); the dict is cleared after each merge pass.
     _source_projections: Dict[str, BaseProjectionModel] = PrivateAttr(default_factory=dict)
 
     @classmethod
@@ -182,23 +184,25 @@ class PlayerModel(BaseModel):
             | HitterProjectionModel
         ]
 
+        src = projection_source.lower()
+        steamer_family = ("steamer", "steamerr", "steameru")
         if "W" in data and "L" in data and "ERA" in data:
             player_cls = PitcherModel
-            if projection_source.lower() == "steamer":
+            if src in steamer_family:
                 proj_cls = PitcherSteamerProjectionModel
-            elif projection_source.lower() == "atc":
+            elif src == "atc":
                 proj_cls = PitcherATCProjectionModel
-            elif projection_source.lower() in ["the_bat", "thebat"]:
+            elif src in ("thebat", "rthebat"):
                 proj_cls = PitcherTHEBATProjectionModel
             else:
                 proj_cls = PitcherProjectionModel
         elif "AB" in data and "PA" in data and "RBI" in data:
             player_cls = HitterModel
-            if projection_source.lower() == "steamer":
+            if src in steamer_family:
                 proj_cls = HitterSteamerProjectionModel
-            elif projection_source.lower() == "atc":
+            elif src == "atc":
                 proj_cls = HitterATCProjectionModel
-            elif projection_source.lower() in ["the_bat", "thebat", "thebatx"]:
+            elif src in ("thebat", "thebatx", "rthebat", "rthebatx"):
                 proj_cls = HitterTHEBATProjectionModel
             else:
                 proj_cls = HitterProjectionModel
@@ -216,8 +220,10 @@ class PlayerModel(BaseModel):
         # Create projection instance
         projection = proj_cls.model_validate(data)
 
-        # Attach the projection to the player
-        player.projection = projection
+        # Attach the projection to the player. parse_player always writes to the
+        # `projections` slot; the runner re-targets the merged result into `ros`
+        # for the rest-of-season pass.
+        player.projections = projection
         player._source_projections[projection_source] = projection
 
         return player
