@@ -10,7 +10,10 @@
       "Bash(/Users/Shared/BaseballHQ/tools/_extract/Fangraphs_API_Extractor/.venv/bin/python *)",
       "Bash(uv run *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(mkdir -p /tmp/fge_ros_test)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/fge_ros_test/**)"
     ]
   },
   "enableAllProjectMcpServers": false
