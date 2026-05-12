@@ -17,6 +17,34 @@ from fangraphs_api_extractor.utils.weighted_average import (
 )
 
 
+def test_merge_writes_none_when_player_has_no_source_projections():
+    """When a player enters the merge with no projections from any source,
+    the target slot is set to None (line 265: `merged = None`).
+
+    This happens when a source's player list contains a player whose
+    `.projections` is None and `._source_projections` is empty — the
+    canonical "no data" state.
+    """
+    bare = HitterModel.model_validate(
+        {
+            "Team": "NYY",
+            "playerid": "0000",
+            "PlayerName": "Bare",
+            "xMLBAMID": 0,
+            "teamid": 0,
+            "AB": 0,
+            "PA": 0,
+            "RBI": 0,
+        }
+    )
+    # bare.projections is None and bare._source_projections is empty by default
+    result = merge_player_projections(
+        {"steamer": [bare]}, {"steamer": 1.0}, target_slot="projections"
+    )
+    assert len(result) == 1
+    assert result[0].projections is None
+
+
 def test_round_half_up_to_int_uses_half_away_from_zero():
     """Regression: integer-field rounding must use ROUND_HALF_UP, not banker's.
 

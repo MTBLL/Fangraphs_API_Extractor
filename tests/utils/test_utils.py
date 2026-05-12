@@ -3,15 +3,29 @@
 import json
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
 from fangraphs_api_extractor.models import HitterModel
 from fangraphs_api_extractor.utils.utils import (
     get_nested_values,
+    round_floats,
     save_extraction_results,
     serialize_players,
 )
+
+
+def test_round_floats_recurses_into_lists():
+    """`round_floats` must recurse into list values, not just dicts."""
+    # Top-level list
+    assert round_floats([0.1234, 0.5556, 0.9999]) == [0.123, 0.556, 1.0]
+    # List nested inside dict
+    nested = {"qq": [0.0005, 0.1234, 0.5], "name": "x"}
+    assert round_floats(nested) == {"qq": [0.001, 0.123, 0.5], "name": "x"}
+    # Non-numeric items left alone in a list
+    mixed = [0.1234, "str", 42, None, [0.7654]]
+    assert round_floats(mixed) == [0.123, "str", 42, None, [0.765]]
 
 
 @pytest.fixture
@@ -215,6 +229,45 @@ def test_serialize_players_with_missing_attributes():
     assert result[0]["name"] == "Test Player"
     assert result[0]["team"] == "FA"
     assert result[0]["xmlbam_id"] == -1
+
+
+def test_serialize_players_catches_catastrophic_player_failure():
+    """The outer try/except in serialize_players catches errors that fire
+    before the per-slot serialization (e.g. round_floats raising on a weird
+    value), producing a stub record with an `error` key rather than aborting.
+    """
+    from unittest.mock import MagicMock
+
+    # A player whose `name` attribute access raises a non-AttributeError
+    # propagates up through the outer try/except.
+    player = MagicMock()
+    # The two-arg `getattr` falls back on AttributeError but not RuntimeError,
+    # so a RuntimeError from the descriptor propagates and triggers the outer
+    # except. The fallback path then does getattr(player, "name", "unknown")
+    # again, which also raises, but the inner-of-except uses the same getattr
+    # with a default — so we need name to ALSO be accessible somewhere.
+    type(player).name = "Catastrophe Player"  # class attr, not descriptor
+    type(player).ascii_name = "Catastrophe Player"
+
+    # Force round_floats to blow up by making the player return a non-numeric
+    # but float-like object. Simpler: mock model_dump to return something that
+    # makes round_floats raise.
+    bad_proj = MagicMock()
+    bad_proj.model_dump.return_value = {"bad": object()}  # object() isn't JSON-serializable but round_floats handles it fine — need another trigger
+    player.projections = bad_proj
+    player.projs_updated = None
+    player.ros = None
+
+    # Easier approach: patch round_floats to raise once
+    with patch(
+        "fangraphs_api_extractor.utils.utils.round_floats",
+        side_effect=RuntimeError("simulated catastrophe"),
+    ):
+        result = serialize_players([player])
+
+    assert len(result) == 1
+    assert "error" in result[0]
+    assert result[0]["name"] == "Catastrophe Player"
 
 
 def test_serialize_players_with_projection_error():

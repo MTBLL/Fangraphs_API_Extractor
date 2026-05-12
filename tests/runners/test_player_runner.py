@@ -137,6 +137,76 @@ def test_player_runner_initialization_defaults():
     assert runner.sources["ros"]["batters"][0] == "rthebatx"
 
 
+def test_equal_weights_from_sources_handles_empty_source_list():
+    """`_equal_weights_from_sources` must not crash or omit empty source lists.
+
+    A slot with an empty list (e.g. caller explicitly disables a slot via
+    `{"projections": {"batters": []}}`) should produce `{}` for that position,
+    not raise ZeroDivisionError or skip the key.
+    """
+    sources = {
+        "projections": {"batters": [], "pitchers": ["only_one"]},
+    }
+    weights = PlayerRunner._equal_weights_from_sources(sources)
+
+    assert weights["projections"]["batters"] == {}
+    assert weights["projections"]["pitchers"] == {"only_one": 1.0}
+
+
+@patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
+def test_fetch_and_merge_slot_skips_empty_position_lists(
+    mock_handler_class, sample_hitters, sample_pitchers
+):
+    """A slot with one populated position and one empty position must skip the
+    empty one in the log/fetch loop without erroring.
+    """
+    mock_handler = MagicMock()
+    mock_handler.fetch_all_players_multi_source.return_value = (
+        {"thebatx": sample_hitters},
+        {},  # no pitchers
+    )
+    mock_handler_class.return_value = mock_handler
+
+    sources = {
+        "projections": {"batters": ["thebatx"], "pitchers": []},
+    }
+    runner = PlayerRunner(year=2026, sources=sources)
+    h, p = runner._fetch_and_merge_slot("projections")
+
+    # batters merged, pitchers empty — and crucially no crash from the empty list
+    assert len(h) == 5
+    assert p == []
+
+
+@patch("fangraphs_api_extractor.runners.player_runner.PlayerFetchHandler")
+def test_fetch_and_merge_slot_skips_when_no_sources(
+    mock_handler_class, sample_hitters, sample_pitchers
+):
+    """When a slot has empty source lists for every position, `_fetch_and_merge_slot`
+    must short-circuit without calling the fetch handler at all.
+    """
+    mock_handler = MagicMock()
+    mock_handler_class.return_value = mock_handler
+
+    sources = {
+        "projections": {"batters": ["thebatx"], "pitchers": ["oopsy"]},
+        # `projs_updated` slot omitted entirely — the runner should skip it.
+        "ros": {"batters": [], "pitchers": []},  # explicitly empty
+    }
+    runner = PlayerRunner(year=2026, sources=sources)
+
+    # projs_updated slot — never configured
+    h, p = runner._fetch_and_merge_slot("projs_updated")
+    assert h == [] and p == []
+
+    # ros slot — configured but all empty lists
+    h, p = runner._fetch_and_merge_slot("ros")
+    assert h == [] and p == []
+
+    # Fetch handler was never invoked for these skip cases
+    mock_handler.fetch_all_players_multi_source.assert_not_called()
+
+
 def test_custom_sources_without_weights_derives_equal_weights():
     """Regression: custom sources + no weights should derive equal weights.
 
