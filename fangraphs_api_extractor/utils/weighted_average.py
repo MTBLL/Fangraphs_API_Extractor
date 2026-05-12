@@ -5,7 +5,7 @@ This module provides functions to calculate weighted averages across multiple
 projection sources for baseball player statistics.
 """
 
-from typing import Any, Dict, List, Mapping, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from fangraphs_api_extractor.models import PlayerModel
 from fangraphs_api_extractor.models.base_player import BaseProjectionModel
