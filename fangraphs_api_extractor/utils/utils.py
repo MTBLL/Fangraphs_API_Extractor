@@ -4,6 +4,14 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+)
+
 from fangraphs_api_extractor.utils import Logger
 from fangraphs_api_extractor.utils.string_utils import normalize_string
 
@@ -59,48 +67,55 @@ def serialize_players(players: List["PlayerModel"]) -> List[Dict]:
             return {}
         return model.model_dump(by_alias=True, exclude_none=True)
 
-    for i, player in enumerate(players):
-        try:
-            # Ensure we have the basic player fields
-            serialized_player: Dict[str, Any] = {
-                "name": getattr(player, "name", "unknown"),
-                "ascii_name": getattr(
-                    player,
-                    "ascii_name",
-                    normalize_string(getattr(player, "name", "unknown")),
-                ),
-                "team": getattr(player, "team", "FA"),
-                "playerid": getattr(player, "playerid", "unknown"),
-                "xmlbam_id": getattr(player, "xmlbam_id", -1),
-                "slug": getattr(player, "slug", ""),
-                "stats_api": getattr(player, "stats_api", ""),
-                "projections": {},
-                "projs_updated": {},
-                "ros": {},
-            }
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Serializing players", total=len(players))
+        for i, player in enumerate(players):
+            try:
+                # Ensure we have the basic player fields
+                serialized_player: Dict[str, Any] = {
+                    "name": getattr(player, "name", "unknown"),
+                    "ascii_name": getattr(
+                        player,
+                        "ascii_name",
+                        normalize_string(getattr(player, "name", "unknown")),
+                    ),
+                    "team": getattr(player, "team", "FA"),
+                    "playerid": getattr(player, "playerid", "unknown"),
+                    "xmlbam_id": getattr(player, "xmlbam_id", -1),
+                    "slug": getattr(player, "slug", ""),
+                    "stats_api": getattr(player, "stats_api", ""),
+                    "projections": {},
+                    "projs_updated": {},
+                    "ros": {},
+                }
 
-            for slot in ("projections", "projs_updated", "ros"):
-                try:
-                    serialized_player[slot] = _dump(getattr(player, slot, None))
-                except Exception as e:
-                    log.error(f"Error processing {slot} for player {i + 1}: {e}")
+                for slot in ("projections", "projs_updated", "ros"):
+                    try:
+                        serialized_player[slot] = _dump(getattr(player, slot, None))
+                    except Exception as e:
+                        log.error(f"Error processing {slot} for player {i + 1}: {e}")
 
-            # Round all float values in the player record to 3 decimal places
-            serialized_player = round_floats(serialized_player)
+                # Round all float values in the player record to 3 decimal places
+                serialized_player = round_floats(serialized_player)
 
-            player_data_list.append(serialized_player)
+                player_data_list.append(serialized_player)
 
-            if i % 100 == 0:  # Log progress every 100 players
-                log.info(f"Serialized {i + 1}/{len(players)} players")
+            except Exception as e:
+                log.error(f"Error serializing player {i + 1}: {e}")
 
-        except Exception as e:
-            log.error(f"Error serializing player {i + 1}: {e}")
-
-            # Still add basic info even if there's an error
-            name = getattr(player, "name", "unknown")
-            player_data_list.append(
-                {"name": name, "ascii_name": normalize_string(name), "error": str(e)}
-            )
+                # Still add basic info even if there's an error
+                name = getattr(player, "name", "unknown")
+                player_data_list.append(
+                    {"name": name, "ascii_name": normalize_string(name), "error": str(e)}
+                )
+            finally:
+                progress.update(task, advance=1)
 
     log.info(f"Completed serialization with {len(player_data_list)} results")
 

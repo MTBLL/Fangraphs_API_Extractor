@@ -171,7 +171,7 @@ class CoreFangraphs:
         merged_params.update(params or {})
 
         try:
-            self.logger.logging.info(
+            self.logger.logging.debug(
                 f"Fetching {position_group} projections with {projections_system}"
             )
             raw_data = self._get(params=merged_params)
