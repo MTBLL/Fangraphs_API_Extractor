@@ -259,3 +259,23 @@ def test_fetch_all_players_multi_source_empty_sources(mock_core_fangraphs):
     assert pitchers_by_source == {}
     # API should not be called
     mock_core_fangraphs.get_projections_data.assert_not_called()
+
+
+def test_fetch_all_players_multi_source_invalid_key_warns(
+    mock_core_fangraphs, hitter_fixture_data
+):
+    """Unknown keys in the sources dict are warned about and otherwise ignored."""
+    mock_core_fangraphs.get_projections_data.return_value = hitter_fixture_data
+
+    handler = PlayerFetchHandler(mock_core_fangraphs)
+    handler.log = MagicMock()
+
+    sources = {"batters": ["steamer"], "garbage": ["steamer"]}
+    batters_by_source, pitchers_by_source = handler.fetch_all_players_multi_source(
+        sources
+    )
+
+    # Unknown key produces a warning, valid keys still process.
+    handler.log.warning.assert_any_call("Invalid source structure: garbage")
+    assert "steamer" in batters_by_source
+    assert pitchers_by_source == {}
