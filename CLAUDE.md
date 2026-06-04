@@ -35,6 +35,12 @@ save_extraction_results          # writes fangraph_{batters,pitchers}_<year>_<ts
 `__main__.py` CLI is a thin wrapper that builds `sources` / `weights` dicts and
 calls `PlayerRunner.run()`.
 
+**Cloudflare:** Fangraphs fronts `/api/projections` with a managed JS challenge.
+`CoreFangraphs` solves it via a FlareSolverr sidecar when `FLARESOLVERR_URL` is
+set (adopts the `cf_clearance` cookie + the solver's User-Agent on the session).
+Without it, pulls 403 while the challenge is active. Full story and the
+dead-ends tried: [`docs/the-wall-goes-up.md`](docs/the-wall-goes-up.md).
+
 ## Three-slot projection schema
 
 Each player carries **three independent projection blobs**, each merged from a
