@@ -67,7 +67,7 @@ def test_check_request_status_unknown(core_fangraphs):
     core_fangraphs._check_request_status(999, "/test")
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_request_success(mock_get, core_fangraphs):
     """Test successful GET request."""
     # Mock response
@@ -82,7 +82,7 @@ def test_get_request_success(mock_get, core_fangraphs):
     mock_get.assert_called_once()
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_request_with_headers(mock_get, core_fangraphs):
     """Test GET request with custom headers."""
     mock_response = Mock()
@@ -135,7 +135,7 @@ def test_get_projections_data_invalid_projections_system(core_fangraphs):
     assert result is None
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_success_bat(mock_get, core_fangraphs):
     """Test successful get_projections_data for batters."""
     mock_response = Mock()
@@ -151,7 +151,7 @@ def test_get_projections_data_success_bat(mock_get, core_fangraphs):
     mock_get.assert_called_once()
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_success_pit(mock_get, core_fangraphs):
     """Test successful get_projections_data for pitchers."""
     mock_response = Mock()
@@ -166,7 +166,7 @@ def test_get_projections_data_success_pit(mock_get, core_fangraphs):
     assert result == {"pitchers": [{"name": "Test Pitcher"}]}
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_with_custom_params(mock_get, core_fangraphs):
     """Test get_projections_data with custom parameters."""
     mock_response = Mock()
@@ -182,7 +182,7 @@ def test_get_projections_data_with_custom_params(mock_get, core_fangraphs):
     assert result == {"data": "test"}
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_exception(mock_get, core_fangraphs):
     """Test get_projections_data when request raises exception."""
     mock_get.side_effect = Exception("Network error")
@@ -197,6 +197,7 @@ def test_get_projections_data_exception(mock_get, core_fangraphs):
 def test_response_status_enum():
     """Test ResponseStatus enum values."""
     assert ResponseStatus.SUCCESS.value == 200
+    assert ResponseStatus.FORBIDDEN.value == 403
     assert ResponseStatus.NOT_FOUND.value == 404
     assert ResponseStatus.RATE_LIMITED.value == 429
     assert ResponseStatus.SERVER_ERROR.value == 500
@@ -204,7 +205,7 @@ def test_response_status_enum():
     assert ResponseStatus.UNKNOWN_ERROR.value == 0
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_valid_batting_positions(mock_get, core_fangraphs):
     """Test get_projections_data with various valid batting positions."""
     mock_response = Mock()
@@ -221,7 +222,7 @@ def test_get_projections_data_valid_batting_positions(mock_get, core_fangraphs):
         assert result == {"data": "test"}
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_valid_projection_systems(mock_get, core_fangraphs):
     """Test get_projections_data with various valid projection systems."""
     mock_response = Mock()
@@ -238,7 +239,78 @@ def test_get_projections_data_valid_projection_systems(mock_get, core_fangraphs)
         assert result == {"data": "test"}
 
 
-@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.get")
+def _flaresolverr_solution():
+    """Build a fake FlareSolverr `request.get` response."""
+    resp = Mock()
+    resp.json.return_value = {
+        "status": "ok",
+        "solution": {
+            "userAgent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/148.0.0.0",
+            "cookies": [
+                {"name": "cf_clearance", "value": "TOKEN", "domain": ".fangraphs.com"}
+            ],
+        },
+    }
+    return resp
+
+
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.post")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
+def test_get_solves_cloudflare_when_configured(mock_get, mock_post, core_fangraphs):
+    """When FLARESOLVERR_URL is set, _get solves once and adopts the cf_clearance
+    cookie plus the solver's User-Agent on the session."""
+    core_fangraphs.flaresolverr_url = "http://flaresolverr:8191/v1"
+    core_fangraphs._clearance_ready = False
+    mock_post.return_value = _flaresolverr_solution()
+
+    ok = Mock()
+    ok.status_code = 200
+    ok.json.return_value = {"data": "test"}
+    mock_get.return_value = ok
+
+    result = core_fangraphs._get(params={"test": "param"})
+
+    assert result == {"data": "test"}
+    mock_post.assert_called_once()  # solved exactly once
+    assert core_fangraphs.session.headers["User-Agent"].endswith("Chrome/148.0.0.0")
+    assert core_fangraphs.session.cookies.get("cf_clearance") == "TOKEN"
+
+
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.post")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
+def test_get_resolves_on_mid_run_403(mock_get, mock_post, core_fangraphs):
+    """A 403 mid-run triggers exactly one re-solve and retry."""
+    core_fangraphs.flaresolverr_url = "http://flaresolverr:8191/v1"
+    core_fangraphs._clearance_ready = True  # already have (now-stale) clearance
+    mock_post.return_value = _flaresolverr_solution()
+
+    forbidden = Mock()
+    forbidden.status_code = 403
+    ok = Mock()
+    ok.status_code = 200
+    ok.json.return_value = {"data": "test"}
+    mock_get.side_effect = [forbidden, ok]
+
+    result = core_fangraphs._get(params={"test": "param"})
+
+    assert result == {"data": "test"}
+    assert mock_get.call_count == 2  # initial 403 + retry
+    mock_post.assert_called_once()  # re-solved once
+
+
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
+def test_get_raises_on_unresolved_non_200(mock_get, core_fangraphs):
+    """A non-200 (no solver configured) raises rather than crashing on r.json()."""
+    forbidden = Mock()
+    forbidden.status_code = 403
+    forbidden.json.side_effect = ValueError("not JSON")
+    mock_get.return_value = forbidden
+
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        core_fangraphs._get(params={"test": "param"})
+
+
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_projections_data_valid_position_groups(mock_get, core_fangraphs):
     """Test get_projections_data with all valid position groups."""
     mock_response = Mock()
