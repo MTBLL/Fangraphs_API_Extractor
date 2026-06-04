@@ -298,6 +298,22 @@ def test_get_resolves_on_mid_run_403(mock_get, mock_post, core_fangraphs):
     mock_post.assert_called_once()  # re-solved once
 
 
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.post")
+@patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
+def test_solve_raises_when_flaresolverr_fails(mock_get, mock_post, core_fangraphs):
+    """A non-ok FlareSolverr status surfaces as a RuntimeError."""
+    core_fangraphs.flaresolverr_url = "http://flaresolverr:8191/v1"
+    core_fangraphs._clearance_ready = False
+    failed = Mock()
+    failed.json.return_value = {"status": "error", "message": "challenge timeout"}
+    mock_post.return_value = failed
+
+    with pytest.raises(RuntimeError, match="challenge timeout"):
+        core_fangraphs._get(params={"test": "param"})
+
+    mock_get.assert_not_called()  # never reached the API
+
+
 @patch("fangraphs_api_extractor.requests.core_fangraphs.requests.Session.get")
 def test_get_raises_on_unresolved_non_200(mock_get, core_fangraphs):
     """A non-200 (no solver configured) raises rather than crashing on r.json()."""
