@@ -12,7 +12,10 @@ from fangraphs_api_extractor.utils import (
     PROJECTION_SYSTEMS,
     Logger,
 )
-from fangraphs_api_extractor.utils.constants import USER_AGENT_HEADER
+from fangraphs_api_extractor.utils.constants import (
+    FANGRAPHS_CHALLENGE_URL,
+    USER_AGENT_HEADER,
+)
 from fangraphs_api_extractor.utils.errors import (
     InvalidPositionError,
     InvalidPositionGroupError,
@@ -24,6 +27,7 @@ class ResponseStatus(Enum):
     """Enum representing possible API response statuses"""
 
     SUCCESS = 200
+    FORBIDDEN = 403
     NOT_FOUND = 404
     RATE_LIMITED = 429
     SERVER_ERROR = 500
@@ -55,6 +59,17 @@ class CoreFangraphs:
         # Set the API URL
         self.fg_projections_url = FANGRAPHS_API_ENDPOINT
 
+        # Cloudflare clearance. Fangraphs fronts the projections API with a
+        # managed JS challenge that plain HTTP clients cannot pass. When
+        # FLARESOLVERR_URL is set we delegate solving to a FlareSolverr sidecar,
+        # then adopt the cf_clearance cookie + the exact User-Agent it used and
+        # reuse them for every API call (cf_clearance is bound to that UA and the
+        # egress IP). Unset → legacy behavior (requests go out unauthenticated
+        # and will 403 while the challenge is active).
+        self.flaresolverr_url = os.environ.get("FLARESOLVERR_URL")
+        self._clearance_lock = Lock()
+        self._clearance_ready = False
+
     def _check_request_status(
         self,
         status: int,
@@ -75,6 +90,12 @@ class CoreFangraphs:
                 case ResponseStatus.SUCCESS.value:
                     return
 
+                case ResponseStatus.FORBIDDEN.value:
+                    self.logger.logging.warning(
+                        "Forbidden (403) — Cloudflare challenge not satisfied. "
+                        "Set FLARESOLVERR_URL to enable challenge solving."
+                    )
+
                 case ResponseStatus.NOT_FOUND.value:
                     self.logger.logging.warning(f"Endpoint not found: {extend}")
 
@@ -89,6 +110,56 @@ class CoreFangraphs:
 
                 case _:
                     self.logger.logging.warning(f"Unknown error: {status}")
+
+    def _ensure_clearance(self) -> None:
+        """Lazily obtain a Cloudflare clearance cookie before the first request.
+
+        No-op when FLARESOLVERR_URL is unset or clearance is already held. The
+        lock makes the one-time solve safe if requests are ever parallelized.
+        """
+        if not self.flaresolverr_url or self._clearance_ready:
+            return
+        with self._clearance_lock:
+            if not self._clearance_ready:
+                self._solve_cloudflare()
+
+    def _solve_cloudflare(self) -> None:
+        """Solve Fangraphs' Cloudflare challenge via FlareSolverr and apply the
+        resulting cf_clearance cookie + User-Agent to the session.
+
+        Raises on transport or solve failure so the caller (and Prefect's
+        transient-retry) can react rather than silently 403-looping.
+        """
+        payload = {
+            "cmd": "request.get",
+            "url": FANGRAPHS_CHALLENGE_URL,
+            "maxTimeout": 60000,
+        }
+        resp = requests.post(self.flaresolverr_url, json=payload, timeout=90)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") != "ok":
+            raise RuntimeError(
+                "FlareSolverr could not solve the Cloudflare challenge: "
+                f"{data.get('message')}"
+            )
+        solution = data["solution"]
+        # cf_clearance is keyed to the solving browser's User-Agent — adopt it
+        # verbatim, overriding the static USER_AGENT_HEADER set at construction.
+        self.session.headers["User-Agent"] = solution["userAgent"]
+        for cookie in solution.get("cookies", []):
+            # FlareSolverr normally returns a domain; fall back to the Fangraphs
+            # zone (the only host we solve) so cookie matching never sees None.
+            self.session.cookies.set(
+                cookie["name"],
+                cookie["value"],
+                domain=cookie.get("domain") or ".fangraphs.com",
+            )
+        self._clearance_ready = True
+        with self.logger_lock:
+            self.logger.logging.info(
+                "Obtained Cloudflare clearance via FlareSolverr"
+            )
 
     def _get(
         self,
@@ -107,19 +178,44 @@ class CoreFangraphs:
         Returns:
             The JSON response from the API
         """
+        self._ensure_clearance()
         endpoint = self.fg_projections_url + extend
-        r = requests.get(
-            endpoint, params=params, headers=headers, cookies=self.session.cookies
-        )
+        # Use the session (not module-level requests.get) so the cf_clearance
+        # cookie and solved User-Agent travel with every call.
+        r = self.session.get(endpoint, params=params, headers=headers)
+
+        # A 403 mid-run means the cf_clearance cookie expired or was rejected.
+        # Re-solve once and retry before surfacing the failure.
+        if r.status_code == ResponseStatus.FORBIDDEN.value and self.flaresolverr_url:
+            with self.logger_lock:
+                self.logger.logging.warning(
+                    "403 from Fangraphs — refreshing Cloudflare clearance"
+                )
+            with self._clearance_lock:
+                self._clearance_ready = False
+            self._ensure_clearance()
+            r = self.session.get(endpoint, params=params, headers=headers)
+
         self._check_request_status(r.status_code, extend)
 
+        # Only a 200 carries a JSON body. On any other status (e.g. an
+        # unresolved 403 serving the Cloudflare challenge HTML) raise a clear
+        # error rather than letting r.json() throw a cryptic JSONDecodeError —
+        # get_projections_data catches this and returns None.
+        if r.status_code != ResponseStatus.SUCCESS.value:
+            raise RuntimeError(
+                f"Fangraphs returned HTTP {r.status_code} for "
+                f"'{extend or 'projections'}'"
+            )
+
+        data = r.json()
         if self.logger:
             with self.logger_lock:
                 self.logger.log_request(
-                    endpoint=endpoint, params=params, headers=headers, response=r.json()
+                    endpoint=endpoint, params=params, headers=headers, response=data
                 )
 
-        return r.json()
+        return data
 
     def get_projections_data(
         self,

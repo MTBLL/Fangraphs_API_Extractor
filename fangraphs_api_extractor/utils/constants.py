@@ -2,6 +2,12 @@ from enum import Enum
 
 FANGRAPHS_API_ENDPOINT = "https://www.fangraphs.com/api/projections?"
 
+# Cloudflare-protected HTML page used to mint a cf_clearance cookie via
+# FlareSolverr. Fangraphs fronts the whole fangraphs.com zone with a managed JS
+# challenge; solving against this page yields a cf_clearance cookie that
+# authorizes the same-zone /api/projections calls.
+FANGRAPHS_CHALLENGE_URL = "https://www.fangraphs.com/projections"
+
 # deprecated
 BUILD_ID = "hkm1KP0YmmKjp8AmZS3FM"
 FANGRAPHS_CORE_BUILD_ENDPOINT = "https://www.fangraphs.com/_next/data/" + BUILD_ID
